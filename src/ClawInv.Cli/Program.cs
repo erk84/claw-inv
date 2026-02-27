@@ -227,7 +227,11 @@ sealed class OptimizeCommand : AsyncCommand<OptimizeCommand.Settings>
         var bestPerType = opt.BestPerType(grid, nav, from, to);
         opt.WriteBestPerType(settings.OutDir, bestPerType);
 
+        ClawInv.Core.Backtest.ReportWriter.WriteMarkdown(settings.OutDir, universe, from, to, top, bestPerType);
+        ClawInv.Core.Backtest.ReportWriter.WriteJson(settings.OutDir, universe, from, to, top, bestPerType);
+
         AnsiConsole.MarkupLine($"Wrote top [green]{top.Count}[/] strategies to [grey]{settings.OutDir}[/]");
+        AnsiConsole.MarkupLine($"Wrote report: [grey]{settings.OutDir}/report.md[/]");
 
         foreach (var kv in bestPerType.OrderBy(k => k.Key.ToString()))
         {
