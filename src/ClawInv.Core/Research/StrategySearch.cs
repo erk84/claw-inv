@@ -147,6 +147,16 @@ public sealed class StrategySearch
             var navNow = _m.Nav[infoT, f];
             var navThen = _m.Nav[infoT - lb, f];
             if (double.IsNaN(navNow) || double.IsNaN(navThen) || navThen == 0) continue;
+
+            // Optional trend gate for momentum: require NAV above MA.
+            // If ma < 2 => no trend gate.
+            if (ma >= 2)
+            {
+                var maVal = MovingAverage(_m.Nav, infoT, f, ma);
+                if (double.IsNaN(maVal) || maVal <= 0) continue;
+                if (navNow <= maVal) continue;
+            }
+
             var mom = navNow / navThen - 1.0;
             arr[count++] = (f, mom);
         }
@@ -158,10 +168,9 @@ public sealed class StrategySearch
         if (p.UseAbsoluteMomentum && arr[0].mom <= 0)
             return []; // CASH
 
-        // optional: if topK>1, equal weight topK
         var candidates = arr.Take(count).Select(x => x.f).ToList();
 
-        // low-vol as secondary filter can be approximated by choosing lowest vol among momentum-ranked list
+        // low-vol as secondary filter: choose lowest vol among momentum-ranked list
         if (p.VolLookbackMonths >= 2)
         {
             var vols = new List<(int f, double v)>();
@@ -288,5 +297,104 @@ public sealed class StrategySearch
         var stdev = Math.Sqrt(variance);
         if (stdev == 0) return double.NaN;
         return (mean / stdev) * Math.Sqrt(12.0);
+    }
+
+
+    public TrialTrace Trace(TrialParams p)
+    {
+        var T = _m.Dates.Length;
+        var F = _m.FundIds.Length;
+
+        int lb = Math.Max(1, p.LookbackMonths);
+        int volLb = Math.Max(2, p.VolLookbackMonths);
+        int ma = Math.Max(1, p.TrendMaMonths);
+
+        var warmup = Math.Max(lb, Math.Max(volLb, ma)) + 2;
+        if (warmup >= T)
+            return new TrialTrace(p, Array.Empty<RebalanceEvent>(), 1.0, double.NaN, double.NaN);
+
+        var equity = 1.0;
+        var peak = 1.0;
+        var mdd = 0.0;
+
+        var holdings = new List<int>();
+        var events = new List<RebalanceEvent>();
+
+        for (var t = 1; t < T; t++)
+        {
+            if (t >= warmup && (t % Math.Max(1, p.RebalanceMonths) == 0))
+            {
+                holdings.Clear();
+                var infoT = t - 1;
+
+                var selected = p.Kind switch
+                {
+                    ResearchStrategyKind.Momentum => SelectMomentum(p, infoT, lb, volLb, ma),
+                    ResearchStrategyKind.LowVol => SelectLowVol(p, infoT, volLb),
+                    ResearchStrategyKind.Trend => SelectTrend(p, infoT, ma),
+                    ResearchStrategyKind.MeanReversion => SelectMeanReversion(p, infoT, lb),
+                    _ => Array.Empty<int>()
+                };
+
+                holdings.AddRange(selected);
+
+                double? bestMom = null;
+                if (p.Kind == ResearchStrategyKind.Momentum)
+                {
+                    // compute best momentum for transparency
+                    var best = double.NegativeInfinity;
+                    for (var f = 0; f < F; f++)
+                    {
+                        var navNow = _m.Nav[infoT, f];
+                        var navThen = _m.Nav[infoT - lb, f];
+                        if (double.IsNaN(navNow) || double.IsNaN(navThen) || navThen == 0) continue;
+                        var mom = navNow / navThen - 1.0;
+                        if (mom > best) best = mom;
+                    }
+                    if (!double.IsNegativeInfinity(best)) bestMom = best;
+                }
+
+                events.Add(new RebalanceEvent(
+                    Date: _m.Dates[t],
+                    Kind: "REBALANCE",
+                    Holdings: holdings.Select(i => _m.FundIds[i]).ToArray(),
+                    BestMomentum: bestMom,
+                    AppliedReturn: null,
+                    Equity: equity));
+            }
+
+            // apply return t-1->t
+            var r = 0.0;
+            if (holdings.Count > 0)
+            {
+                var sum = 0.0;
+                var n = 0;
+                foreach (var f in holdings)
+                {
+                    var rr = _m.Ret1M[t, f];
+                    if (double.IsNaN(rr)) continue;
+                    sum += rr;
+                    n++;
+                }
+                if (n > 0) r = sum / n;
+            }
+
+            equity *= (1.0 + r);
+            peak = Math.Max(peak, equity);
+            var dd = equity / peak - 1.0;
+            mdd = Math.Min(mdd, dd);
+
+            // annotate last event with applied return when month matches
+            if (events.Count > 0 && events[^1].Date == _m.Dates[t] && events[^1].AppliedReturn is null)
+            {
+                var last = events[^1];
+                events[^1] = last with { AppliedReturn = r, Equity = equity };
+            }
+        }
+
+        var years = (_m.Dates[^1].DayNumber - _m.Dates[0].DayNumber) / 365.2425;
+        var cagr = years > 0 ? Math.Pow(equity, 1.0 / years) - 1.0 : double.NaN;
+
+        return new TrialTrace(p, events, equity, cagr, mdd);
     }
 }
