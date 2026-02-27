@@ -1,3 +1,5 @@
+using ClawInv.Core;
+
 namespace ClawInv.Core.Avanza;
 
 public static class AvanzaChartConverter
@@ -16,7 +18,7 @@ public static class AvanzaChartConverter
             {
                 var local = TimeZoneInfo.ConvertTime(DateTimeOffset.FromUnixTimeMilliseconds(p.X), tz);
                 var date = DateOnly.FromDateTime(local.DateTime);
-                var nav = 1m + (decimal)p.Y.Value / 100m;
+                var nav = 1m + (decimal)p.Y!.Value / 100m;
                 return new NavPoint(date, nav);
             })
             .OrderBy(p => p.Date)
