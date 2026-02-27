@@ -509,21 +509,28 @@ sealed class SearchBestCommand : AsyncCommand<SearchBestCommand.Settings>
         int Pick(params int[] xs) => xs[rnd.Next(xs.Length)];
         bool Flip(double p) => rnd.NextDouble() < p;
 
-        var kind = (ClawInv.Core.Research.ResearchStrategyKind)rnd.Next(0, 4);
+        // Bias sampling towards momentum+trend-gate variants; they tend to reduce daily drawdowns.
+        var kindRoll = rnd.NextDouble();
+        var kind = kindRoll < 0.60
+            ? ClawInv.Core.Research.ResearchStrategyKind.Momentum
+            : (ClawInv.Core.Research.ResearchStrategyKind)rnd.Next(0, 4);
 
         var lookback = Pick(1, 2, 3, 4, 6, 9, 12);
         var reb = Pick(1, 2, 3);
         var topK = Pick(1, 2);
 
-        var abs = kind == ClawInv.Core.Research.ResearchStrategyKind.Momentum && Flip(0.5);
+        var abs = kind == ClawInv.Core.Research.ResearchStrategyKind.Momentum && Flip(0.75);
 
         var volLb = (kind == ClawInv.Core.Research.ResearchStrategyKind.LowVol || kind == ClawInv.Core.Research.ResearchStrategyKind.Momentum)
             ? Pick(3, 6, 12)
             : 0;
 
+        // TrendMaMonths doubles as a trend-gate for Momentum kind (if >=2)
         var ma = kind == ClawInv.Core.Research.ResearchStrategyKind.Trend
             ? Pick(6, 9, 12, 18)
-            : 0;
+            : (kind == ClawInv.Core.Research.ResearchStrategyKind.Momentum && Flip(0.70)
+                ? Pick(6, 9, 12, 18)
+                : 0);
 
         return new ClawInv.Core.Research.TrialParams(
             Kind: kind,

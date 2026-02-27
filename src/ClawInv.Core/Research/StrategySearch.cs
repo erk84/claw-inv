@@ -147,6 +147,16 @@ public sealed class StrategySearch
             var navNow = _m.Nav[infoT, f];
             var navThen = _m.Nav[infoT - lb, f];
             if (double.IsNaN(navNow) || double.IsNaN(navThen) || navThen == 0) continue;
+
+            // Optional trend gate for momentum: require NAV above MA.
+            // If ma < 2 => no trend gate.
+            if (ma >= 2)
+            {
+                var maVal = MovingAverage(_m.Nav, infoT, f, ma);
+                if (double.IsNaN(maVal) || maVal <= 0) continue;
+                if (navNow <= maVal) continue;
+            }
+
             var mom = navNow / navThen - 1.0;
             arr[count++] = (f, mom);
         }
@@ -158,10 +168,9 @@ public sealed class StrategySearch
         if (p.UseAbsoluteMomentum && arr[0].mom <= 0)
             return []; // CASH
 
-        // optional: if topK>1, equal weight topK
         var candidates = arr.Take(count).Select(x => x.f).ToList();
 
-        // low-vol as secondary filter can be approximated by choosing lowest vol among momentum-ranked list
+        // low-vol as secondary filter: choose lowest vol among momentum-ranked list
         if (p.VolLookbackMonths >= 2)
         {
             var vols = new List<(int f, double v)>();
