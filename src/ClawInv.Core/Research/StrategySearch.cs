@@ -41,8 +41,9 @@ public sealed class StrategySearch
 
                 if (!IsRiskOn(p, infoT))
                 {
-                    // CASH
-                    // holdings stay empty
+                    if (p.RiskOffMode == ClawInv.Core.Strategies.RiskOffMode.DefensiveFund)
+                        holdings.AddRange(SelectDefensive(infoT, p.DefensiveVolLookbackMonths));
+                    // else CASH
                 }
                 else
                 {
@@ -51,7 +52,11 @@ public sealed class StrategySearch
                         ResearchStrategyKind.Momentum => SelectMomentum(p, infoT, lb, volLb, ma),
                         ResearchStrategyKind.LowVol => SelectLowVol(p, infoT, volLb),
                         ResearchStrategyKind.Trend => SelectTrend(p, infoT, ma),
-                        ResearchStrategyKind.MeanReversion => SelectMeanReversion(p, infoT, lb),
+                        ResearchStrategyKind.MeanReversion => SelectMeanReversion(p, infoT, lb, ma),
+                        ResearchStrategyKind.MinVariance2 => SelectMinVariance2(p, infoT, lb),
+                        ResearchStrategyKind.SharpeProxy => SelectSharpeProxy(p, infoT, lb),
+                        ResearchStrategyKind.CorrFilteredTop2 => SelectCorrFilteredTop2(p, infoT, lb, volLb, ma),
+                        ResearchStrategyKind.BandReversion => SelectBandReversion(p, infoT, lb, ma),
                         _ => Array.Empty<int>()
                     };
 
@@ -103,7 +108,9 @@ public sealed class StrategySearch
 
                 if (!IsRiskOn(p, infoT))
                 {
-                    // CASH
+                    if (p.RiskOffMode == ClawInv.Core.Strategies.RiskOffMode.DefensiveFund)
+                        holdings.AddRange(SelectDefensive(infoT, p.DefensiveVolLookbackMonths));
+                    // else CASH
                 }
                 else
                 {
@@ -112,7 +119,11 @@ public sealed class StrategySearch
                         ResearchStrategyKind.Momentum => SelectMomentum(p, infoT, lb, volLb, ma),
                         ResearchStrategyKind.LowVol => SelectLowVol(p, infoT, volLb),
                         ResearchStrategyKind.Trend => SelectTrend(p, infoT, ma),
-                        ResearchStrategyKind.MeanReversion => SelectMeanReversion(p, infoT, lb),
+                        ResearchStrategyKind.MeanReversion => SelectMeanReversion(p, infoT, lb, ma),
+                        ResearchStrategyKind.MinVariance2 => SelectMinVariance2(p, infoT, lb),
+                        ResearchStrategyKind.SharpeProxy => SelectSharpeProxy(p, infoT, lb),
+                        ResearchStrategyKind.CorrFilteredTop2 => SelectCorrFilteredTop2(p, infoT, lb, volLb, ma),
+                        ResearchStrategyKind.BandReversion => SelectBandReversion(p, infoT, lb, ma),
                         _ => Array.Empty<int>()
                     };
                     holdings.AddRange(selected);
@@ -231,7 +242,7 @@ public sealed class StrategySearch
         var candidates = arr.Take(count).Select(x => x.f).ToList();
 
         // low-vol as secondary filter: choose lowest vol among momentum-ranked list
-        if (p.VolLookbackMonths >= 2)
+        if (p.UseLowVolFilter && p.VolLookbackMonths >= 2)
         {
             var vols = new List<(int f, double v)>();
             foreach (var f in candidates)
@@ -289,7 +300,7 @@ public sealed class StrategySearch
         return scored.Take(k).Select(x => x.f).ToArray();
     }
 
-    private int[] SelectMeanReversion(TrialParams p, int infoT, int lb)
+    private int[] SelectMeanReversion(TrialParams p, int infoT, int lb, int ma)
     {
         var F = _m.FundIds.Length;
         var arr = new (int f, double mom)[F];
@@ -300,16 +311,284 @@ public sealed class StrategySearch
             var navNow = _m.Nav[infoT, f];
             var navThen = _m.Nav[infoT - lb, f];
             if (double.IsNaN(navNow) || double.IsNaN(navThen) || navThen == 0) continue;
+
+            // Trend gate for mean reversion as well (helps avoid catching falling knives)
+            if (ma >= 2)
+            {
+                var maVal = MovingAverage(_m.Nav, infoT, f, ma);
+                if (double.IsNaN(maVal) || maVal <= 0) continue;
+                if (navNow <= maVal) continue;
+            }
+
             var mom = navNow / navThen - 1.0;
             arr[count++] = (f, mom);
         }
 
         if (count == 0) return [];
 
-        // mean reversion: pick the WORST performers (most negative mom)
+        // mean reversion: pick the WORST performers (most negative momentum)
         Array.Sort(arr, 0, count, Comparer<(int f, double mom)>.Create((a, b) => a.mom.CompareTo(b.mom)));
         var k = Math.Max(1, Math.Min(p.TopK, count));
         return arr.Take(k).Select(x => x.f).ToArray();
+    }
+
+    private int[] SelectDefensive(int infoT, int volLookbackMonths)
+    {
+        // Defensive = lowest volatility fund (monthly returns) over volLookbackMonths.
+        var volLb = Math.Max(2, volLookbackMonths);
+        var F = _m.FundIds.Length;
+
+        var bestF = -1;
+        var bestVol = double.PositiveInfinity;
+
+        for (var f = 0; f < F; f++)
+        {
+            var v = Volatility(_m.Ret1M, infoT, f, volLb);
+            if (double.IsNaN(v)) continue;
+            if (v < bestVol)
+            {
+                bestVol = v;
+                bestF = f;
+            }
+        }
+
+        return bestF >= 0 ? [bestF] : [];
+    }
+
+    private int[] SelectMinVariance2(TrialParams p, int infoT, int lb)
+    {
+        // Choose 2-fund equal-weight portfolio with minimum variance using monthly returns.
+        // To keep it fast, we only consider a small pool of low-vol candidates.
+        var F = _m.FundIds.Length;
+        var volLb = Math.Max(6, lb);
+
+        var vols = new List<(int f, double v)>(F);
+        for (var f = 0; f < F; f++)
+        {
+            var v = Volatility(_m.Ret1M, infoT, f, volLb);
+            if (!double.IsNaN(v)) vols.Add((f, v));
+        }
+
+        if (vols.Count == 0) return [];
+        vols.Sort((a, b) => a.v.CompareTo(b.v));
+
+        var pool = vols.Take(Math.Min(20, vols.Count)).Select(x => x.f).ToArray();
+        if (pool.Length == 1) return [pool[0]];
+
+        (int a, int b)? best = null;
+        var bestVar = double.PositiveInfinity;
+
+        for (var i = 0; i < pool.Length; i++)
+        for (var j = i + 1; j < pool.Length; j++)
+        {
+            var a = pool[i];
+            var b = pool[j];
+            var v = PairVariance(_m.Ret1M, infoT, a, b, lb);
+            if (double.IsNaN(v)) continue;
+            if (v < bestVar)
+            {
+                bestVar = v;
+                best = (a, b);
+            }
+        }
+
+        if (best is null)
+            return [pool[0]];
+
+        return [best.Value.a, best.Value.b];
+    }
+
+    private static double PairVariance(double[,] ret1M, int t, int fa, int fb, int months)
+    {
+        var start = t - Math.Max(2, months);
+        if (start < 1) return double.NaN;
+
+        var valsA = new List<double>();
+        var valsB = new List<double>();
+        for (var i = start; i <= t; i++)
+        {
+            var a = ret1M[i, fa];
+            var b = ret1M[i, fb];
+            if (double.IsNaN(a) || double.IsNaN(b)) continue;
+            valsA.Add(a);
+            valsB.Add(b);
+        }
+        if (valsA.Count < 4) return double.NaN;
+
+        var meanA = valsA.Average();
+        var meanB = valsB.Average();
+        double varA = 0, varB = 0, cov = 0;
+
+        for (var i = 0; i < valsA.Count; i++)
+        {
+            var da = valsA[i] - meanA;
+            var db = valsB[i] - meanB;
+            varA += da * da;
+            varB += db * db;
+            cov += da * db;
+        }
+
+        var n = valsA.Count - 1;
+        varA /= n;
+        varB /= n;
+        cov /= n;
+
+        // Equal-weight portfolio variance: 0.25*(varA + varB + 2*cov)
+        return 0.25 * (varA + varB + 2.0 * cov);
+    }
+
+    private int[] SelectSharpeProxy(TrialParams p, int infoT, int lb)
+    {
+        // Pick funds with highest mean/stdev of monthly returns over lookback.
+        var months = Math.Max(6, lb);
+        var F = _m.FundIds.Length;
+
+        var scored = new List<(int f, double s)>(F);
+        for (var f = 0; f < F; f++)
+        {
+            var start = infoT - months;
+            if (start < 1) continue;
+
+            var vals = new List<double>();
+            for (var i = start; i <= infoT; i++)
+            {
+                var r = _m.Ret1M[i, f];
+                if (!double.IsNaN(r)) vals.Add(r);
+            }
+            if (vals.Count < Math.Max(4, months / 2)) continue;
+
+            var mean = vals.Average();
+            var varSum = vals.Sum(x => (x - mean) * (x - mean));
+            var stdev = Math.Sqrt(varSum / (vals.Count - 1));
+            if (stdev <= 0) continue;
+
+            scored.Add((f, mean / stdev));
+        }
+
+        if (scored.Count == 0) return [];
+        scored.Sort((a, b) => b.s.CompareTo(a.s));
+
+        var k = Math.Max(1, Math.Min(p.TopK, scored.Count));
+        return scored.Take(k).Select(x => x.f).ToArray();
+    }
+
+    private int[] SelectCorrFilteredTop2(TrialParams p, int infoT, int lb, int volLb, int ma)
+    {
+        // Step 1: pick best momentum fund (with same filters as momentum kind)
+        var first = SelectMomentum(p, infoT, lb, volLb, ma);
+        if (first.Length == 0) return [];
+        if (p.TopK <= 1) return [first[0]];
+
+        var f1 = first[0];
+
+        // Step 2: choose second among top momentum candidates that has lowest correlation to first
+        var F = _m.FundIds.Length;
+        var arr = new (int f, double mom)[F];
+        var count = 0;
+
+        for (var f = 0; f < F; f++)
+        {
+            if (f == f1) continue;
+            var navNow = _m.Nav[infoT, f];
+            var navThen = _m.Nav[infoT - lb, f];
+            if (double.IsNaN(navNow) || double.IsNaN(navThen) || navThen == 0) continue;
+            var mom = navNow / navThen - 1.0;
+            arr[count++] = (f, mom);
+        }
+
+        if (count == 0) return [f1];
+        Array.Sort(arr, 0, count, Comparer<(int f, double mom)>.Create((a, b) => b.mom.CompareTo(a.mom)));
+
+        var pool = arr.Take(Math.Min(25, count)).Select(x => x.f).ToArray();
+
+        var bestF2 = -1;
+        var bestCorr = double.PositiveInfinity;
+
+        foreach (var f2 in pool)
+        {
+            var corr = Correlation(_m.Ret1M, infoT, f1, f2, Math.Max(6, lb));
+            if (double.IsNaN(corr)) continue;
+            if (corr < bestCorr)
+            {
+                bestCorr = corr;
+                bestF2 = f2;
+            }
+        }
+
+        return bestF2 >= 0 ? [f1, bestF2] : [f1];
+    }
+
+    private int[] SelectBandReversion(TrialParams p, int infoT, int lb, int ma)
+    {
+        // Pick funds most below their MA (z-ish), but only if long-term trend is up (trend gate).
+        var window = Math.Max(6, lb);
+        var maN = Math.Max(6, ma);
+        var F = _m.FundIds.Length;
+
+        var scored = new List<(int f, double score)>(F);
+        for (var f = 0; f < F; f++)
+        {
+            var navNow = _m.Nav[infoT, f];
+            if (double.IsNaN(navNow)) continue;
+
+            // trend gate: NAV above longer MA
+            var trendMa = MovingAverage(_m.Nav, infoT, f, maN);
+            if (double.IsNaN(trendMa) || trendMa <= 0) continue;
+            if (navNow <= trendMa) continue;
+
+            // short MA band
+            var bandMa = MovingAverage(_m.Nav, infoT, f, window);
+            if (double.IsNaN(bandMa) || bandMa <= 0) continue;
+
+            var rel = navNow / bandMa - 1.0;
+            // mean reversion: prefer most negative rel (furthest below MA)
+            scored.Add((f, -rel));
+        }
+
+        if (scored.Count == 0) return [];
+        scored.Sort((a, b) => b.score.CompareTo(a.score));
+        var k = Math.Max(1, Math.Min(p.TopK, scored.Count));
+        return scored.Take(k).Select(x => x.f).ToArray();
+    }
+
+    private static double Correlation(double[,] ret1M, int t, int fa, int fb, int months)
+    {
+        var start = t - Math.Max(2, months);
+        if (start < 1) return double.NaN;
+
+        var aVals = new List<double>();
+        var bVals = new List<double>();
+        for (var i = start; i <= t; i++)
+        {
+            var a = ret1M[i, fa];
+            var b = ret1M[i, fb];
+            if (double.IsNaN(a) || double.IsNaN(b)) continue;
+            aVals.Add(a);
+            bVals.Add(b);
+        }
+
+        if (aVals.Count < 6) return double.NaN;
+        var meanA = aVals.Average();
+        var meanB = bVals.Average();
+
+        double varA = 0, varB = 0, cov = 0;
+        for (var i = 0; i < aVals.Count; i++)
+        {
+            var da = aVals[i] - meanA;
+            var db = bVals[i] - meanB;
+            varA += da * da;
+            varB += db * db;
+            cov += da * db;
+        }
+
+        var n = aVals.Count - 1;
+        varA /= n;
+        varB /= n;
+        cov /= n;
+
+        var denom = Math.Sqrt(varA) * Math.Sqrt(varB);
+        if (denom <= 0) return double.NaN;
+        return cov / denom;
     }
 
     private static double MovingAverage(double[,] nav, int t, int f, int months)
@@ -409,14 +688,29 @@ public sealed class StrategySearch
                 holdings.Clear();
                 var infoT = t - 1;
 
-                var selected = p.Kind switch
+                int[] selected;
+
+                if (!IsRiskOn(p, infoT))
                 {
-                    ResearchStrategyKind.Momentum => SelectMomentum(p, infoT, lb, volLb, ma),
-                    ResearchStrategyKind.LowVol => SelectLowVol(p, infoT, volLb),
-                    ResearchStrategyKind.Trend => SelectTrend(p, infoT, ma),
-                    ResearchStrategyKind.MeanReversion => SelectMeanReversion(p, infoT, lb),
-                    _ => Array.Empty<int>()
-                };
+                    selected = p.RiskOffMode == ClawInv.Core.Strategies.RiskOffMode.DefensiveFund
+                        ? SelectDefensive(infoT, p.DefensiveVolLookbackMonths)
+                        : Array.Empty<int>();
+                }
+                else
+                {
+                    selected = p.Kind switch
+                    {
+                        ResearchStrategyKind.Momentum => SelectMomentum(p, infoT, lb, volLb, ma),
+                        ResearchStrategyKind.LowVol => SelectLowVol(p, infoT, volLb),
+                        ResearchStrategyKind.Trend => SelectTrend(p, infoT, ma),
+                        ResearchStrategyKind.MeanReversion => SelectMeanReversion(p, infoT, lb, ma),
+                        ResearchStrategyKind.MinVariance2 => SelectMinVariance2(p, infoT, lb),
+                        ResearchStrategyKind.SharpeProxy => SelectSharpeProxy(p, infoT, lb),
+                        ResearchStrategyKind.CorrFilteredTop2 => SelectCorrFilteredTop2(p, infoT, lb, volLb, ma),
+                        ResearchStrategyKind.BandReversion => SelectBandReversion(p, infoT, lb, ma),
+                        _ => Array.Empty<int>()
+                    };
+                }
 
                 holdings.AddRange(selected);
 

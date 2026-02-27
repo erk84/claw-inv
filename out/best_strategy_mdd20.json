@@ -1,0 +1,16 @@
+{
+  "Params": {
+    "Kind": 0,
+    "LookbackMonths": 2,
+    "RebalanceMonths": 2,
+    "TopK": 2,
+    "UseAbsoluteMomentum": true,
+    "VolLookbackMonths": 3,
+    "TrendMaMonths": 1,
+    "MaxDrawdownFloor": -0.2
+  },
+  "Sharpe": 1.4791101808243297,
+  "Cagr": 0.19330348982169365,
+  "MaxDrawdown": -0.15763047611282555,
+  "Score": 1.4791101808243297
+}

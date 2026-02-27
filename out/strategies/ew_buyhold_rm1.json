@@ -1,0 +1,28 @@
+{
+  "Strategy": {
+    "Id": "ew_buyhold_rm1",
+    "Name": "EqualWeight buy\u0026hold (monthly rebalance)",
+    "Type": 4,
+    "RebalanceEveryMonths": 1,
+    "LookbackMonths": 0,
+    "TopK": 2147483647,
+    "Allocation": 1,
+    "UseAbsoluteMomentumFilter": false,
+    "MovingAverageMonths": 0,
+    "VolatilityLookbackMonths": 0,
+    "UseLowVolFilter": false
+  },
+  "Result": {
+    "StrategyId": "ew_buyhold_rm1",
+    "StrategyName": "EqualWeight buy\u0026hold (monthly rebalance)",
+    "Start": "2016-03-01",
+    "End": "2026-02-01",
+    "Days": 3624,
+    "Cagr": 0.149990831024173,
+    "Volatility": 0.571729022596788,
+    "Sharpe": 0.2623460155003431784884644096,
+    "MaxDrawdown": -0.1750866264610046749290481117,
+    "TotalReturn": 3.0013622515708259394445055266,
+    "Notes": "Monthly rebalance engine"
+  }
+}

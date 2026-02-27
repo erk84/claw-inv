@@ -1,0 +1,142 @@
+{
+  "MomentumRotation": {
+    "Strategy": {
+      "Id": "mom_rel_lb11_rm2_eq5",
+      "Name": "Momentum (rel) LB=11m Rebal=2m Alloc=eq5",
+      "Type": 0,
+      "RebalanceEveryMonths": 2,
+      "LookbackMonths": 11,
+      "TopK": 5,
+      "Allocation": 1,
+      "UseAbsoluteMomentumFilter": false,
+      "MovingAverageMonths": 0,
+      "VolatilityLookbackMonths": 0,
+      "UseLowVolFilter": false
+    },
+    "Result": {
+      "StrategyId": "mom_rel_lb11_rm2_eq5",
+      "StrategyName": "Momentum (rel) LB=11m Rebal=2m Alloc=eq5",
+      "Start": "2016-03-01",
+      "End": "2026-02-01",
+      "Days": 3624,
+      "Cagr": 0.220049853077926,
+      "Volatility": 0.775618290150529,
+      "Sharpe": 0.2837089530666167954907758047,
+      "MaxDrawdown": -0.2066175945455863997979911706,
+      "TotalReturn": 6.1950834529751824566182685989,
+      "Notes": "Monthly rebalance engine"
+    }
+  },
+  "TrendFollowing": {
+    "Strategy": {
+      "Id": "trend_ma18_rm1_k5",
+      "Name": "Trend MA=18m Rebal=1m TopK=5",
+      "Type": 2,
+      "RebalanceEveryMonths": 1,
+      "LookbackMonths": 0,
+      "TopK": 5,
+      "Allocation": 1,
+      "UseAbsoluteMomentumFilter": false,
+      "MovingAverageMonths": 18,
+      "VolatilityLookbackMonths": 0,
+      "UseLowVolFilter": false
+    },
+    "Result": {
+      "StrategyId": "trend_ma18_rm1_k5",
+      "StrategyName": "Trend MA=18m Rebal=1m TopK=5",
+      "Start": "2016-03-01",
+      "End": "2026-02-01",
+      "Days": 3624,
+      "Cagr": 0.164318015115421,
+      "Volatility": 0.85813630765925,
+      "Sharpe": 0.191482417943174400580352413,
+      "MaxDrawdown": -0.2049604327149661651835790431,
+      "TotalReturn": 3.5243968001546696777431031238,
+      "Notes": "Monthly rebalance engine"
+    }
+  },
+  "LowVolatilitySelection": {
+    "Strategy": {
+      "Id": "lowvol_lb3_rm3_k3",
+      "Name": "LowVol LB=3m Rebal=3m TopK=3",
+      "Type": 3,
+      "RebalanceEveryMonths": 3,
+      "LookbackMonths": 0,
+      "TopK": 3,
+      "Allocation": 1,
+      "UseAbsoluteMomentumFilter": false,
+      "MovingAverageMonths": 0,
+      "VolatilityLookbackMonths": 3,
+      "UseLowVolFilter": false
+    },
+    "Result": {
+      "StrategyId": "lowvol_lb3_rm3_k3",
+      "StrategyName": "LowVol LB=3m Rebal=3m TopK=3",
+      "Start": "2016-03-01",
+      "End": "2026-02-01",
+      "Days": 3624,
+      "Cagr": 0.210991343225071,
+      "Volatility": 0.604707173763988,
+      "Sharpe": 0.34891490026777671971524935,
+      "MaxDrawdown": -0.1630090798084689123315790011,
+      "TotalReturn": 5.6822542346155119107008660943,
+      "Notes": "Monthly rebalance engine"
+    }
+  },
+  "EqualWeightBuyAndHold": {
+    "Strategy": {
+      "Id": "ew_buyhold_rm1",
+      "Name": "EqualWeight buy\u0026hold (monthly rebalance)",
+      "Type": 4,
+      "RebalanceEveryMonths": 1,
+      "LookbackMonths": 0,
+      "TopK": 2147483647,
+      "Allocation": 1,
+      "UseAbsoluteMomentumFilter": false,
+      "MovingAverageMonths": 0,
+      "VolatilityLookbackMonths": 0,
+      "UseLowVolFilter": false
+    },
+    "Result": {
+      "StrategyId": "ew_buyhold_rm1",
+      "StrategyName": "EqualWeight buy\u0026hold (monthly rebalance)",
+      "Start": "2016-03-01",
+      "End": "2026-02-01",
+      "Days": 3624,
+      "Cagr": 0.149990831024173,
+      "Volatility": 0.571729022596788,
+      "Sharpe": 0.2623460155003431784884644096,
+      "MaxDrawdown": -0.1750866264610046749290481117,
+      "TotalReturn": 3.0013622515708259394445055266,
+      "Notes": "Monthly rebalance engine"
+    }
+  },
+  "BestStrategyV1MonthEnd": {
+    "Strategy": {
+      "Id": "best_v1_mom2m_reb2m_top2_abs_lowvol3m",
+      "Name": "BestStrategyV1: Mom(2m) reb2m top2 abs \u002B lowvol(3m)",
+      "Type": 5,
+      "RebalanceEveryMonths": 2,
+      "LookbackMonths": 2,
+      "TopK": 2,
+      "Allocation": 1,
+      "UseAbsoluteMomentumFilter": true,
+      "MovingAverageMonths": 0,
+      "VolatilityLookbackMonths": 3,
+      "UseLowVolFilter": true
+    },
+    "Result": {
+      "StrategyId": "best_v1_mom2m_reb2m_top2_abs_lowvol3m",
+      "StrategyName": "BestStrategyV1: Mom(2m) reb2m top2 abs \u002B lowvol(3m) (month-end)",
+      "Start": "2016-03-01",
+      "End": "2026-02-01",
+      "Days": 3624,
+      "Cagr": 0.193303489821694,
+      "Volatility": 0,
+      "Sharpe": 1.47911018082433,
+      "MaxDrawdown": -0.157630476112826,
+      "TotalReturn": 0,
+      "Notes": "Research-aligned month-end backtest"
+    }
+  }
+}

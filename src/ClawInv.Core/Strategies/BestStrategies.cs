@@ -28,6 +28,11 @@ public static class BestStrategies
         UseAbsoluteMomentumFilter: true,
         MovingAverageMonths: 0,
         VolatilityLookbackMonths: 3,
-        UseLowVolFilter: true
+        UseLowVolFilter: true,
+        Regime: ClawInv.Core.Research.RegimeKind.None,
+        RegimeMaMonths: 1,
+        RegimeThreshold: 0.0,
+        RiskOffMode: RiskOffMode.Cash,
+        DefensiveVolLookbackMonths: 6
     );
 }

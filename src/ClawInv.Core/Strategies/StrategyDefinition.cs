@@ -1,3 +1,5 @@
+using ClawInv.Core.Research;
+
 namespace ClawInv.Core.Strategies;
 
 public enum AllocationMode
@@ -14,16 +16,26 @@ public sealed record StrategyDefinition(
     // generic knobs
     int RebalanceEveryMonths,
 
-    // momentum knobs
+    // selection knobs
     int LookbackMonths,
     int TopK,
     AllocationMode Allocation,
+
+    // momentum knobs
     bool UseAbsoluteMomentumFilter,
 
-    // trend knobs
+    // mean reversion / trend knobs
     int MovingAverageMonths,
 
     // risk knobs
     int VolatilityLookbackMonths,
-    bool UseLowVolFilter
+    bool UseLowVolFilter,
+
+    // regime + risk-off behavior
+    RegimeKind Regime,
+    int RegimeMaMonths,
+    double RegimeThreshold,
+    RiskOffMode RiskOffMode,
+    int DefensiveVolLookbackMonths
 );
+

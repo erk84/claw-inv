@@ -5,5 +5,13 @@ public enum ResearchStrategyKind
     Momentum,
     LowVol,
     Trend,
-    MeanReversion
+    MeanReversion,
+    MinVariance2,
+
+    // New families
+    SharpeProxy,
+    CorrFilteredTop2,
+    BandReversion
 }
+
+

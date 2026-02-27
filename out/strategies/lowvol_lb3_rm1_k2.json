@@ -1,0 +1,28 @@
+{
+  "Strategy": {
+    "Id": "lowvol_lb3_rm1_k2",
+    "Name": "LowVol LB=3m Rebal=1m TopK=2",
+    "Type": 3,
+    "RebalanceEveryMonths": 1,
+    "LookbackMonths": 0,
+    "TopK": 2,
+    "Allocation": 1,
+    "UseAbsoluteMomentumFilter": false,
+    "MovingAverageMonths": 0,
+    "VolatilityLookbackMonths": 3,
+    "UseLowVolFilter": false
+  },
+  "Result": {
+    "StrategyId": "lowvol_lb3_rm1_k2",
+    "StrategyName": "LowVol LB=3m Rebal=1m TopK=2",
+    "Start": "2016-03-01",
+    "End": "2026-02-01",
+    "Days": 3624,
+    "Cagr": 0.156925906143543,
+    "Volatility": 0.617233315360715,
+    "Sharpe": 0.2542408231024187693021900699,
+    "MaxDrawdown": -0.163229169116740368105689503,
+    "TotalReturn": 3.2473280671720946519381406873,
+    "Notes": "Monthly rebalance engine"
+  }
+}

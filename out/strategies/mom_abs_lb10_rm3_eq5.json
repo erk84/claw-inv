@@ -1,0 +1,28 @@
+{
+  "Strategy": {
+    "Id": "mom_abs_lb10_rm3_eq5",
+    "Name": "Momentum (abs) LB=10m Rebal=3m Alloc=eq5",
+    "Type": 0,
+    "RebalanceEveryMonths": 3,
+    "LookbackMonths": 10,
+    "TopK": 5,
+    "Allocation": 1,
+    "UseAbsoluteMomentumFilter": true,
+    "MovingAverageMonths": 0,
+    "VolatilityLookbackMonths": 0,
+    "UseLowVolFilter": false
+  },
+  "Result": {
+    "StrategyId": "mom_abs_lb10_rm3_eq5",
+    "StrategyName": "Momentum (abs) LB=10m Rebal=3m Alloc=eq5",
+    "Start": "2016-03-01",
+    "End": "2026-02-01",
+    "Days": 3624,
+    "Cagr": 0.200444577289518,
+    "Volatility": 0.775561462052082,
+    "Sharpe": 0.2584509250358514576660112392,
+    "MaxDrawdown": -0.2161426092554608309999755129,
+    "TotalReturn": 5.1267502275390968138835238411,
+    "Notes": "Monthly rebalance engine"
+  }
+}

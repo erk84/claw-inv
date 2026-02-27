@@ -24,11 +24,14 @@ public static class MonthEndBestV1Backtester
             RebalanceMonths: strat.RebalanceEveryMonths,
             TopK: strat.TopK,
             UseAbsoluteMomentum: strat.UseAbsoluteMomentumFilter,
+            UseLowVolFilter: strat.UseLowVolFilter,
             VolLookbackMonths: Math.Max(2, strat.VolatilityLookbackMonths),
             TrendMaMonths: Math.Max(1, strat.MovingAverageMonths),
-            Regime: RegimeKind.None,
-            RegimeMaMonths: 1,
-            RegimeBreadthThreshold: 0.0,
+            Regime: strat.Regime,
+            RegimeMaMonths: Math.Max(1, strat.RegimeMaMonths),
+            RegimeBreadthThreshold: strat.RegimeThreshold,
+            RiskOffMode: strat.RiskOffMode,
+            DefensiveVolLookbackMonths: Math.Max(2, strat.DefensiveVolLookbackMonths),
             MaxDrawdownPenaltyLambda: 0.0
         );
 

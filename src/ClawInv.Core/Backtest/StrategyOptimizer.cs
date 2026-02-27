@@ -78,7 +78,12 @@ public sealed class StrategyOptimizer
                     UseAbsoluteMomentumFilter: abs,
                     MovingAverageMonths: 0,
                     VolatilityLookbackMonths: 0,
-                    UseLowVolFilter: false));
+                    UseLowVolFilter: false,
+                    Regime: ClawInv.Core.Research.RegimeKind.None,
+                    RegimeMaMonths: 1,
+                    RegimeThreshold: 0.0,
+                    RiskOffMode: RiskOffMode.Cash,
+                    DefensiveVolLookbackMonths: 6));
 
                 if (++count >= maxStrategiesPerType)
                     break;
@@ -110,7 +115,12 @@ public sealed class StrategyOptimizer
                     UseAbsoluteMomentumFilter: false,
                     MovingAverageMonths: ma,
                     VolatilityLookbackMonths: 0,
-                    UseLowVolFilter: false));
+                    UseLowVolFilter: false,
+                    Regime: ClawInv.Core.Research.RegimeKind.None,
+                    RegimeMaMonths: 1,
+                    RegimeThreshold: 0.0,
+                    RiskOffMode: RiskOffMode.Cash,
+                    DefensiveVolLookbackMonths: 6));
 
                 if (++count >= maxStrategiesPerType)
                     break;
@@ -142,7 +152,12 @@ public sealed class StrategyOptimizer
                     UseAbsoluteMomentumFilter: false,
                     MovingAverageMonths: 0,
                     VolatilityLookbackMonths: vlb,
-                    UseLowVolFilter: false));
+                    UseLowVolFilter: false,
+                    Regime: ClawInv.Core.Research.RegimeKind.None,
+                    RegimeMaMonths: 1,
+                    RegimeThreshold: 0.0,
+                    RiskOffMode: RiskOffMode.Cash,
+                    DefensiveVolLookbackMonths: 6));
 
                 if (++count >= maxStrategiesPerType)
                     break;
@@ -162,7 +177,12 @@ public sealed class StrategyOptimizer
                 UseAbsoluteMomentumFilter: false,
                 MovingAverageMonths: 0,
                 VolatilityLookbackMonths: 0,
-                UseLowVolFilter: false));
+                UseLowVolFilter: false,
+                Regime: ClawInv.Core.Research.RegimeKind.None,
+                RegimeMaMonths: 1,
+                RegimeThreshold: 0.0,
+                RiskOffMode: RiskOffMode.Cash,
+                DefensiveVolLookbackMonths: 6));
         }
 
         // 5) BestStrategyV1 (explicit)

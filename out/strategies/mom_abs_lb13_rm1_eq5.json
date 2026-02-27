@@ -1,0 +1,28 @@
+{
+  "Strategy": {
+    "Id": "mom_abs_lb13_rm1_eq5",
+    "Name": "Momentum (abs) LB=13m Rebal=1m Alloc=eq5",
+    "Type": 0,
+    "RebalanceEveryMonths": 1,
+    "LookbackMonths": 13,
+    "TopK": 5,
+    "Allocation": 1,
+    "UseAbsoluteMomentumFilter": true,
+    "MovingAverageMonths": 0,
+    "VolatilityLookbackMonths": 0,
+    "UseLowVolFilter": false
+  },
+  "Result": {
+    "StrategyId": "mom_abs_lb13_rm1_eq5",
+    "StrategyName": "Momentum (abs) LB=13m Rebal=1m Alloc=eq5",
+    "Start": "2016-03-01",
+    "End": "2026-02-01",
+    "Days": 3624,
+    "Cagr": 0.209886292238829,
+    "Volatility": 0.801284369829804,
+    "Sharpe": 0.261937334785913378831067569,
+    "MaxDrawdown": -0.208332594782787116335180019,
+    "TotalReturn": 5.6219989690382592462059977509,
+    "Notes": "Monthly rebalance engine"
+  }
+}

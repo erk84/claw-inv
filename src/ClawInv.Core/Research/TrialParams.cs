@@ -1,3 +1,5 @@
+using ClawInv.Core.Strategies;
+
 namespace ClawInv.Core.Research;
 
 public sealed record TrialParams(
@@ -12,6 +14,7 @@ public sealed record TrialParams(
     bool UseAbsoluteMomentum,
 
     // low-vol knobs
+    bool UseLowVolFilter,
     int VolLookbackMonths,
 
     // trend knobs
@@ -22,6 +25,11 @@ public sealed record TrialParams(
     int RegimeMaMonths,
     double RegimeBreadthThreshold,
 
+    // risk-off behavior
+    RiskOffMode RiskOffMode,
+    int DefensiveVolLookbackMonths,
+
     // scoring
     double MaxDrawdownPenaltyLambda
 );
+

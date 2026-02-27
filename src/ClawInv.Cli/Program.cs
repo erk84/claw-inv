@@ -2,6 +2,7 @@ using ClawInv.Core;
 using ClawInv.Core.Avanza;
 using Spectre.Console;
 using Spectre.Console.Cli;
+using ClawInv.Cli;
 
 var app = new CommandApp();
 app.Configure(cfg =>
@@ -25,6 +26,9 @@ app.Configure(cfg =>
 
     cfg.AddCommand<SearchBestCommand>("search-best")
         .WithDescription("Run 100k trial search to find a stable best strategy (research mode)." );
+
+    cfg.AddCommand<SearchFamiliesCommand>("search-families")
+        .WithDescription("Run trial search for multiple strategy families in one run (shared NAV/matrices)." );
 
     cfg.AddCommand<ClawInv.Cli.TraceCommand>("trace")
         .WithDescription("Trace month-end transactions for a best-strategy JSON (outputs CSV)." );
@@ -311,6 +315,9 @@ sealed class SearchBestCommand : AsyncCommand<SearchBestCommand.Settings>
         [CommandOption("--trials <N>")]
         public int Trials { get; init; } = 100_000;
 
+        [CommandOption("--kind <KIND>")]
+        public string Kind { get; init; } = "";
+
         [CommandOption("--cache-dir <DIR>")]
         public string CacheDir { get; init; } = ".cache/avanza";
 
@@ -343,6 +350,16 @@ sealed class SearchBestCommand : AsyncCommand<SearchBestCommand.Settings>
         var search = new ClawInv.Core.Research.StrategySearch(matrices);
 
         var rnd = new Random(123);
+
+        ClawInv.Core.Research.ResearchStrategyKind? fixedKind = null;
+        if (!string.IsNullOrWhiteSpace(settings.Kind))
+        {
+            if (Enum.TryParse<ClawInv.Core.Research.ResearchStrategyKind>(settings.Kind, ignoreCase: true, out var k))
+                fixedKind = k;
+            else
+                throw new ArgumentException($"Unknown --kind: {settings.Kind}");
+        }
+
         ClawInv.Core.Research.TrialResult? bestMonthEnd = null;
 
         const int KeepTop = 200;
@@ -369,7 +386,8 @@ sealed class SearchBestCommand : AsyncCommand<SearchBestCommand.Settings>
 
         for (var i = 1; i <= settings.Trials; i++)
         {
-            var p = Sample(rnd);
+            var p0 = Sample(rnd);
+            var p = fixedKind is null ? p0 : p0 with { Kind = fixedKind.Value };
             var r = search.Evaluate(p);
 
             if (double.IsNaN(r.Score))
@@ -419,7 +437,7 @@ sealed class SearchBestCommand : AsyncCommand<SearchBestCommand.Settings>
         return 0;
     }
 
-    private static ClawInv.Core.Backtest.BacktestResult ValidateDaily(
+    internal static ClawInv.Core.Backtest.BacktestResult ValidateDaily(
         ClawInv.Core.Research.TrialResult best,
         IReadOnlyList<ClawInv.Core.Backtest.NavSeries> nav,
         DateOnly from,
@@ -441,7 +459,12 @@ sealed class SearchBestCommand : AsyncCommand<SearchBestCommand.Settings>
                     UseAbsoluteMomentumFilter: false,
                     MovingAverageMonths: 0,
                     VolatilityLookbackMonths: p.VolLookbackMonths,
-                    UseLowVolFilter: false),
+                    UseLowVolFilter: false,
+                    Regime: p.Regime,
+                    RegimeMaMonths: p.RegimeMaMonths,
+                    RegimeThreshold: p.RegimeBreadthThreshold,
+                    RiskOffMode: p.RiskOffMode,
+                    DefensiveVolLookbackMonths: p.DefensiveVolLookbackMonths),
                 nav, from, to).result;
         }
 
@@ -459,63 +482,66 @@ sealed class SearchBestCommand : AsyncCommand<SearchBestCommand.Settings>
                     UseAbsoluteMomentumFilter: false,
                     MovingAverageMonths: p.TrendMaMonths,
                     VolatilityLookbackMonths: 0,
-                    UseLowVolFilter: false),
+                    UseLowVolFilter: false,
+                    Regime: p.Regime,
+                    RegimeMaMonths: p.RegimeMaMonths,
+                    RegimeThreshold: p.RegimeBreadthThreshold,
+                    RiskOffMode: p.RiskOffMode,
+                    DefensiveVolLookbackMonths: p.DefensiveVolLookbackMonths),
                 nav, from, to).result;
         }
 
-        if (p.Kind == ClawInv.Core.Research.ResearchStrategyKind.MeanReversion)
+        // Month-end rebalance but simulate daily returns in-between (daily validation)
+        var type = p.Kind switch
         {
-            // Placeholder: currently uses MomentumRotationBacktester logic (positive momentum).
-            // We keep mean-reversion in month-end research, but skip daily validation for now.
-            return new ClawInv.Core.Backtest.BacktestResult(
-                "trial_meanrev",
-                "Trial MeanReversion (daily validation not implemented)",
-                from,
-                to,
-                0,
-                0m,
-                0m,
-                null,
-                0m,
-                0m,
-                "Not implemented"
-            );
-        }
+            ClawInv.Core.Research.ResearchStrategyKind.LowVol => ClawInv.Core.Strategies.StrategyType.LowVolatilitySelection,
+            ClawInv.Core.Research.ResearchStrategyKind.Trend => ClawInv.Core.Strategies.StrategyType.TrendFollowing,
+            ClawInv.Core.Research.ResearchStrategyKind.MeanReversion => ClawInv.Core.Strategies.StrategyType.MeanReversionRotation,
+            ClawInv.Core.Research.ResearchStrategyKind.MinVariance2 => ClawInv.Core.Strategies.StrategyType.MinVariance2,
+            _ => ClawInv.Core.Strategies.StrategyType.MomentumRotation
+        };
 
-        // Momentum: month-end rebalance but simulate daily returns in-between (best match for month-end research)
         var def = new ClawInv.Core.Strategies.StrategyDefinition(
-            Id: "trial_mom",
-            Name: "Trial Momentum",
-            Type: ClawInv.Core.Strategies.StrategyType.MomentumRotation,
+            Id: "trial",
+            Name: $"Trial {p.Kind}",
+            Type: type,
             RebalanceEveryMonths: p.RebalanceMonths,
             LookbackMonths: p.LookbackMonths,
             TopK: Math.Min(2, p.TopK),
             Allocation: ClawInv.Core.Strategies.AllocationMode.EqualWeightTopK,
             UseAbsoluteMomentumFilter: p.UseAbsoluteMomentum,
-            MovingAverageMonths: 0,
+            MovingAverageMonths: p.TrendMaMonths,
             VolatilityLookbackMonths: p.VolLookbackMonths,
-            UseLowVolFilter: true);
+            UseLowVolFilter: true,
+            Regime: p.Regime,
+            RegimeMaMonths: p.RegimeMaMonths,
+            RegimeThreshold: p.RegimeBreadthThreshold,
+            RiskOffMode: p.RiskOffMode,
+            DefensiveVolLookbackMonths: p.DefensiveVolLookbackMonths);
 
         return ClawInv.Core.Backtest.MonthEndRebalanceDailyBacktester.Run(def, nav, from, to, maxDrawdownFloor: -1.0m);
 
     }
 
-    private static ClawInv.Core.Research.TrialParams Sample(Random rnd)
+    internal static ClawInv.Core.Research.TrialParams Sample(Random rnd)
     {
         int Pick(params int[] xs) => xs[rnd.Next(xs.Length)];
         bool Flip(double p) => rnd.NextDouble() < p;
 
-        // Bias sampling towards momentum+trend-gate variants; they tend to reduce daily drawdowns.
+        // Broaden away from pure momentum while still keeping it well-sampled.
         var kindRoll = rnd.NextDouble();
-        var kind = kindRoll < 0.60
+        var kind = kindRoll < 0.45
             ? ClawInv.Core.Research.ResearchStrategyKind.Momentum
-            : (ClawInv.Core.Research.ResearchStrategyKind)rnd.Next(0, 4);
+            : kindRoll < 0.60
+                ? ClawInv.Core.Research.ResearchStrategyKind.MinVariance2
+                : (ClawInv.Core.Research.ResearchStrategyKind)rnd.Next(0, 8);
 
         var lookback = Pick(1, 2, 3, 4, 6, 9, 12);
         var reb = Pick(1, 2, 3);
         var topK = Pick(1, 2);
 
         var abs = kind == ClawInv.Core.Research.ResearchStrategyKind.Momentum && Flip(0.75);
+        var useLowVol = kind == ClawInv.Core.Research.ResearchStrategyKind.Momentum && Flip(0.50);
 
         var volLb = (kind == ClawInv.Core.Research.ResearchStrategyKind.LowVol || kind == ClawInv.Core.Research.ResearchStrategyKind.Momentum)
             ? Pick(3, 6, 12)
@@ -548,7 +574,14 @@ sealed class SearchBestCommand : AsyncCommand<SearchBestCommand.Settings>
             _ => 0.0
         };
 
-        var lambda = Flip(0.5) ? 0.5 : 1.0; // DD penalty strength
+        var riskOffMode = (regime != ClawInv.Core.Research.RegimeKind.None && Flip(0.50))
+            ? ClawInv.Core.Strategies.RiskOffMode.DefensiveFund
+            : ClawInv.Core.Strategies.RiskOffMode.Cash;
+
+        var defVolLb = Pick(3, 6, 12);
+
+        // DD penalty strength (can be 0 now that we're not enforcing an MDD floor)
+        var lambda = Pick(0, 0, 0, 25, 50, 100) / 100.0;
 
         return new ClawInv.Core.Research.TrialParams(
             Kind: kind,
@@ -556,11 +589,14 @@ sealed class SearchBestCommand : AsyncCommand<SearchBestCommand.Settings>
             RebalanceMonths: reb,
             TopK: topK,
             UseAbsoluteMomentum: abs,
+            UseLowVolFilter: useLowVol,
             VolLookbackMonths: Math.Max(2, volLb),
             TrendMaMonths: Math.Max(1, ma),
             Regime: regime,
             RegimeMaMonths: Math.Max(1, regimeMa),
             RegimeBreadthThreshold: thresh,
+            RiskOffMode: riskOffMode,
+            DefensiveVolLookbackMonths: defVolLb,
             MaxDrawdownPenaltyLambda: lambda);
     }
 }

@@ -1,0 +1,28 @@
+{
+  "Strategy": {
+    "Id": "best_v1_mom2m_reb2m_top2_abs_lowvol3m",
+    "Name": "BestStrategyV1: Mom(2m) reb2m top2 abs \u002B lowvol(3m)",
+    "Type": 5,
+    "RebalanceEveryMonths": 2,
+    "LookbackMonths": 2,
+    "TopK": 2,
+    "Allocation": 1,
+    "UseAbsoluteMomentumFilter": true,
+    "MovingAverageMonths": 0,
+    "VolatilityLookbackMonths": 3,
+    "UseLowVolFilter": true
+  },
+  "Result": {
+    "StrategyId": "best_v1_mom2m_reb2m_top2_abs_lowvol3m",
+    "StrategyName": "BestStrategyV1: Mom(2m) reb2m top2 abs \u002B lowvol(3m) (month-end)",
+    "Start": "2016-03-01",
+    "End": "2026-02-01",
+    "Days": 3624,
+    "Cagr": 0.193303489821694,
+    "Volatility": 0,
+    "Sharpe": 1.47911018082433,
+    "MaxDrawdown": -0.157630476112826,
+    "TotalReturn": 0,
+    "Notes": "Research-aligned month-end backtest"
+  }
+}
