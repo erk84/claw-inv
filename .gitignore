@@ -1,0 +1,14 @@
+# .NET
+bin/
+obj/
+.vs/
+TestResults/
+*.user
+*.suo
+
+# Data cache
+*.csv
+*.parquet
+
+# Misc
+.DS_Store

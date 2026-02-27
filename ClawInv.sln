@@ -1,0 +1,33 @@
+
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ClawInv.Core", "src/ClawInv.Core/ClawInv.Core.csproj", "{7F5BFA0E-7D2B-4E7B-B2B1-7B4E6D0B4D46}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ClawInv.Cli", "src/ClawInv.Cli/ClawInv.Cli.csproj", "{B6CB20A5-1A65-4A3E-9C79-0D6C9E8F3B55}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ClawInv.Tests", "src/ClawInv.Tests/ClawInv.Tests.csproj", "{7A0B4D51-58B1-47F0-9B1E-2E14E52A3A6C}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{7F5BFA0E-7D2B-4E7B-B2B1-7B4E6D0B4D46}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7F5BFA0E-7D2B-4E7B-B2B1-7B4E6D0B4D46}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7F5BFA0E-7D2B-4E7B-B2B1-7B4E6D0B4D46}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7F5BFA0E-7D2B-4E7B-B2B1-7B4E6D0B4D46}.Release|Any CPU.Build.0 = Release|Any CPU
+
+		{B6CB20A5-1A65-4A3E-9C79-0D6C9E8F3B55}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B6CB20A5-1A65-4A3E-9C79-0D6C9E8F3B55}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B6CB20A5-1A65-4A3E-9C79-0D6C9E8F3B55}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B6CB20A5-1A65-4A3E-9C79-0D6C9E8F3B55}.Release|Any CPU.Build.0 = Release|Any CPU
+
+		{7A0B4D51-58B1-47F0-9B1E-2E14E52A3A6C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7A0B4D51-58B1-47F0-9B1E-2E14E52A3A6C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7A0B4D51-58B1-47F0-9B1E-2E14E52A3A6C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7A0B4D51-58B1-47F0-9B1E-2E14E52A3A6C}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
