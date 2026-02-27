@@ -23,6 +23,9 @@ app.Configure(cfg =>
     cfg.AddCommand<OptimizeCommand>("optimize")
         .WithDescription("Run strategy search over a fund universe and write top strategies to disk." );
 
+    cfg.AddCommand<SearchBestCommand>("search-best")
+        .WithDescription("Run 100k trial search to find a stable best strategy (research mode)." );
+
     cfg.AddCommand<GenUniverseCommand>("gen-universe")
         .WithDescription("Generate a universe file by sampling Avanza search results (rate limited)." );
 });
@@ -289,5 +292,195 @@ sealed class GenUniverseCommand : AsyncCommand<GenUniverseCommand.Settings>
 
         AnsiConsole.MarkupLine($"Wrote [green]{u.Funds.Count}[/] funds to [grey]{settings.OutPath}[/]");
         return 0;
+    }
+}
+
+sealed class SearchBestCommand : AsyncCommand<SearchBestCommand.Settings>
+{
+    public sealed class Settings : CommandSettings
+    {
+        [CommandOption("--universe <PATH>")]
+        public string UniversePath { get; init; } = "out/universe.json";
+
+        [CommandOption("--years <N>")]
+        public int Years { get; init; } = 10;
+
+        [CommandOption("--trials <N>")]
+        public int Trials { get; init; } = 100_000;
+
+        [CommandOption("--cache-dir <DIR>")]
+        public string CacheDir { get; init; } = ".cache/avanza";
+
+        [CommandOption("--nav-store <DIR>")]
+        public string NavStoreDir { get; init; } = ".cache/nav";
+
+        [CommandOption("--out <PATH>")]
+        public string OutPath { get; init; } = "out/best_strategy.json";
+    }
+
+    public override async Task<int> ExecuteAsync(CommandContext context, Settings settings)
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var from = today.AddYears(-settings.Years);
+        var to = today;
+
+        var universe = ClawInv.Core.Backtest.UniverseLoader.Load(settings.UniversePath);
+
+        var cache = new ClawInv.Core.Infrastructure.SimpleDiskCache(settings.CacheDir);
+        var navStore = new ClawInv.Core.Backtest.NavDataStore(settings.NavStoreDir);
+        using var http = new HttpClient();
+        var avanza = new ClawInv.Core.Avanza.AvanzaClient(http, cache);
+        var tz = ClawInv.Core.Avanza.AvanzaChartConverter.GetStockholmTz();
+
+        var opt = new ClawInv.Core.Backtest.StrategyOptimizer(avanza, navStore, tz);
+        AnsiConsole.MarkupLine($"Loading NAV for [green]{universe.Funds.Count}[/] funds ({from}..{to})...");
+        var nav = await opt.LoadUniverseNavAsync(universe, from, to);
+
+        var matrices = ClawInv.Core.Research.FeatureBuilder.BuildMonthEndMatrices(nav);
+        var search = new ClawInv.Core.Research.StrategySearch(matrices);
+
+        var rnd = new Random(123);
+        ClawInv.Core.Research.TrialResult? best = null;
+
+        for (var i = 1; i <= settings.Trials; i++)
+        {
+            var p = Sample(rnd);
+            var r = search.Evaluate(p);
+
+            if (double.IsNaN(r.Score))
+                continue;
+
+            if (best is null || r.Score > best.Score)
+                best = r;
+
+            if (i % 10_000 == 0 && best is not null)
+            {
+                AnsiConsole.MarkupLine($"T={i:N0}: best score={best.Score:0.000} sharpe={best.Sharpe:0.##} cagr={best.Cagr:P2} mdd={best.MaxDrawdown:P2} kind={best.Params.Kind} lookback={best.Params.LookbackMonths} reb={best.Params.RebalanceMonths} topK={best.Params.TopK} abs={best.Params.UseAbsoluteMomentum} ma={best.Params.TrendMaMonths} volLb={best.Params.VolLookbackMonths} mddFloor={best.Params.MaxDrawdownFloor:P0}" );
+            }
+        }
+
+        if (best is null)
+        {
+            AnsiConsole.MarkupLine("No valid trials.");
+            return 1;
+        }
+
+        Directory.CreateDirectory(Path.GetDirectoryName(settings.OutPath) ?? ".");
+        File.WriteAllText(settings.OutPath, System.Text.Json.JsonSerializer.Serialize(best, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+        AnsiConsole.MarkupLine($"Wrote best strategy to [grey]{settings.OutPath}[/]");
+
+        // Daily validation (final sanity check)
+        var daily = ValidateDaily(best, nav, from, to);
+        AnsiConsole.MarkupLine($"Daily validation => Sharpe: [yellow]{(daily.Sharpe?.ToString("0.##") ?? "n/a")}[/] CAGR: [green]{daily.Cagr:P2}[/] MDD: [red]{daily.MaxDrawdown:P2}[/]");
+
+        return 0;
+    }
+
+    private static ClawInv.Core.Backtest.BacktestResult ValidateDaily(
+        ClawInv.Core.Research.TrialResult best,
+        IReadOnlyList<ClawInv.Core.Backtest.NavSeries> nav,
+        DateOnly from,
+        DateOnly to)
+    {
+        var p = best.Params;
+
+        return p.Kind switch
+        {
+            ClawInv.Core.Research.ResearchStrategyKind.LowVol =>
+                ClawInv.Core.Backtest.LowVolBacktester.Run(
+                    new ClawInv.Core.Strategies.StrategyDefinition(
+                        Id: "trial_lowvol",
+                        Name: "Trial LowVol",
+                        Type: ClawInv.Core.Strategies.StrategyType.LowVolatilitySelection,
+                        RebalanceEveryMonths: p.RebalanceMonths,
+                        LookbackMonths: 0,
+                        TopK: p.TopK,
+                        Allocation: ClawInv.Core.Strategies.AllocationMode.EqualWeightTopK,
+                        UseAbsoluteMomentumFilter: false,
+                        MovingAverageMonths: 0,
+                        VolatilityLookbackMonths: p.VolLookbackMonths,
+                        UseLowVolFilter: false),
+                    nav, from, to).result,
+
+            ClawInv.Core.Research.ResearchStrategyKind.Trend =>
+                ClawInv.Core.Backtest.TrendFollowingBacktester.Run(
+                    new ClawInv.Core.Strategies.StrategyDefinition(
+                        Id: "trial_trend",
+                        Name: "Trial Trend",
+                        Type: ClawInv.Core.Strategies.StrategyType.TrendFollowing,
+                        RebalanceEveryMonths: p.RebalanceMonths,
+                        LookbackMonths: 0,
+                        TopK: p.TopK,
+                        Allocation: ClawInv.Core.Strategies.AllocationMode.EqualWeightTopK,
+                        UseAbsoluteMomentumFilter: false,
+                        MovingAverageMonths: p.TrendMaMonths,
+                        VolatilityLookbackMonths: 0,
+                        UseLowVolFilter: false),
+                    nav, from, to).result,
+
+            ClawInv.Core.Research.ResearchStrategyKind.MeanReversion =>
+                ClawInv.Core.Backtest.MomentumRotationBacktester.Run(
+                    new ClawInv.Core.Strategies.StrategyDefinition(
+                        Id: "trial_meanrev",
+                        Name: "Trial MeanReversion (implemented as negative momentum selection)",
+                        Type: ClawInv.Core.Strategies.StrategyType.MomentumRotation,
+                        RebalanceEveryMonths: p.RebalanceMonths,
+                        LookbackMonths: p.LookbackMonths,
+                        TopK: p.TopK,
+                        Allocation: ClawInv.Core.Strategies.AllocationMode.EqualWeightTopK,
+                        UseAbsoluteMomentumFilter: false,
+                        MovingAverageMonths: 0,
+                        VolatilityLookbackMonths: 0,
+                        UseLowVolFilter: false),
+                    nav, from, to).result,
+
+            _ =>
+                ClawInv.Core.Backtest.MomentumRotationBacktester.Run(
+                    new ClawInv.Core.Strategies.StrategyDefinition(
+                        Id: "trial_mom",
+                        Name: "Trial Momentum",
+                        Type: ClawInv.Core.Strategies.StrategyType.MomentumRotation,
+                        RebalanceEveryMonths: p.RebalanceMonths,
+                        LookbackMonths: p.LookbackMonths,
+                        TopK: p.TopK,
+                        Allocation: ClawInv.Core.Strategies.AllocationMode.EqualWeightTopK,
+                        UseAbsoluteMomentumFilter: p.UseAbsoluteMomentum,
+                        MovingAverageMonths: 0,
+                        VolatilityLookbackMonths: p.VolLookbackMonths,
+                        UseLowVolFilter: true),
+                    nav, from, to).result,
+        };
+    }
+
+    private static ClawInv.Core.Research.TrialParams Sample(Random rnd)
+    {
+        int Pick(params int[] xs) => xs[rnd.Next(xs.Length)];
+        bool Flip(double p) => rnd.NextDouble() < p;
+
+        var kind = (ClawInv.Core.Research.ResearchStrategyKind)rnd.Next(0, 4);
+
+        var lookback = Pick(1, 2, 3, 4, 6, 9, 12);
+        var reb = Pick(1, 2, 3);
+        var topK = Pick(1, 2, 3, 5);
+
+        var abs = kind == ClawInv.Core.Research.ResearchStrategyKind.Momentum && Flip(0.5);
+
+        var volLb = (kind == ClawInv.Core.Research.ResearchStrategyKind.LowVol || kind == ClawInv.Core.Research.ResearchStrategyKind.Momentum)
+            ? Pick(3, 6, 12)
+            : 0;
+
+        var ma = kind == ClawInv.Core.Research.ResearchStrategyKind.Trend
+            ? Pick(6, 9, 12, 18)
+            : 0;
+
+        return new ClawInv.Core.Research.TrialParams(
+            Kind: kind,
+            LookbackMonths: lookback,
+            RebalanceMonths: reb,
+            TopK: topK,
+            UseAbsoluteMomentum: abs,
+            VolLookbackMonths: Math.Max(2, volLb),
+            TrendMaMonths: Math.Max(1, ma),
+            MaxDrawdownFloor: -0.20);
     }
 }

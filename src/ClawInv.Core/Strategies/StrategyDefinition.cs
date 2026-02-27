@@ -24,5 +24,6 @@ public sealed record StrategyDefinition(
     int MovingAverageMonths,
 
     // risk knobs
-    int VolatilityLookbackMonths
+    int VolatilityLookbackMonths,
+    bool UseLowVolFilter
 );

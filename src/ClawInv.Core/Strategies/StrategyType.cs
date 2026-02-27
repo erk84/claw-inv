@@ -6,5 +6,6 @@ public enum StrategyType
     DualMomentum,
     TrendFollowing,
     LowVolatilitySelection,
-    EqualWeightBuyAndHold
+    EqualWeightBuyAndHold,
+    BestStrategyV1MonthEnd
 }
