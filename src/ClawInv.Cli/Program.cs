@@ -252,8 +252,14 @@ sealed class GenUniverseCommand : AsyncCommand<GenUniverseCommand.Settings>
         [CommandOption("--target <N>")]
         public int Target { get; init; } = 100;
 
-        [CommandOption("--max-requests <N>")]
-        public int MaxRequests { get; init; } = 40;
+        [CommandOption("--rating-limit <N>")]
+        public int RatingLimit { get; init; } = 3;
+
+        [CommandOption("--total-fee-limit <N>")]
+        public double TotalFeeLimit { get; init; } = 2.5;
+
+        [CommandOption("--risk-limit <N>")]
+        public int RiskLimit { get; init; } = 3;
 
         [CommandOption("--out <PATH>")]
         public string OutPath { get; init; } = "data/universe.generated.json";
@@ -269,9 +275,17 @@ sealed class GenUniverseCommand : AsyncCommand<GenUniverseCommand.Settings>
         var avanza = new AvanzaClient(http, cache);
 
         var gen = new ClawInv.Core.Backtest.UniverseGenerator(avanza);
-        AnsiConsole.MarkupLine($"Generating universe: target [green]{settings.Target}[/] funds (max requests {settings.MaxRequests})...");
-        var u = await gen.GenerateAsync(settings.Target, settings.MaxRequests);
-        ClawInv.Core.Backtest.UniverseGenerator.Save(u, settings.OutPath);
+        AnsiConsole.MarkupLine(
+            $"Generating universe from Avanza fund list: target [green]{settings.Target}[/] funds " +
+            $"(rating>={settings.RatingLimit}, totalFee<={settings.TotalFeeLimit}, risk>={settings.RiskLimit})...");
+
+        var u = await gen.GenerateFromFundListAsync(
+            settings.Target,
+            settings.RatingLimit,
+            settings.TotalFeeLimit,
+            settings.RiskLimit);
+
+        ClawInv.Core.Backtest.UniverseWriter.Save(u, settings.OutPath);
 
         AnsiConsole.MarkupLine($"Wrote [green]{u.Funds.Count}[/] funds to [grey]{settings.OutPath}[/]");
         return 0;
