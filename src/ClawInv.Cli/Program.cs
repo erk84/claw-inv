@@ -528,18 +528,25 @@ sealed class SearchBestCommand : AsyncCommand<SearchBestCommand.Settings>
                 ? Pick(6, 9, 12, 18)
                 : 0);
 
-        // Regime filter (soft): choose one of None / IndexTrend / Breadth
-        var regime = rnd.NextDouble() < 0.20
+        // Regime filter (soft): None / IndexTrend / Breadth / Index RSI
+        var rr = rnd.NextDouble();
+        var regime = rr < 0.20
             ? ClawInv.Core.Research.RegimeKind.None
-            : (rnd.NextDouble() < 0.50 ? ClawInv.Core.Research.RegimeKind.IndexTrend : ClawInv.Core.Research.RegimeKind.Breadth);
+            : rr < 0.45 ? ClawInv.Core.Research.RegimeKind.Breadth
+            : rr < 0.70 ? ClawInv.Core.Research.RegimeKind.IndexTrend
+            : ClawInv.Core.Research.RegimeKind.IndexRsi;
 
         var regimeMa = regime == ClawInv.Core.Research.RegimeKind.IndexTrend
             ? Pick(6, 9, 12, 18)
             : 0;
 
-        var breadthTh = regime == ClawInv.Core.Research.RegimeKind.Breadth
-            ? (Flip(0.5) ? 0.55 : 0.65)
-            : 0.0;
+        // RegimeBreadthThreshold reused as threshold for Breadth (0..1) and RSI (0..100)
+        var thresh = regime switch
+        {
+            ClawInv.Core.Research.RegimeKind.Breadth => (Flip(0.5) ? 0.60 : 0.70),
+            ClawInv.Core.Research.RegimeKind.IndexRsi => (Flip(0.5) ? 50.0 : 55.0),
+            _ => 0.0
+        };
 
         var lambda = Flip(0.5) ? 0.5 : 1.0; // DD penalty strength
 
@@ -553,7 +560,7 @@ sealed class SearchBestCommand : AsyncCommand<SearchBestCommand.Settings>
             TrendMaMonths: Math.Max(1, ma),
             Regime: regime,
             RegimeMaMonths: Math.Max(1, regimeMa),
-            RegimeBreadthThreshold: breadthTh,
+            RegimeBreadthThreshold: thresh,
             MaxDrawdownPenaltyLambda: lambda);
     }
 }

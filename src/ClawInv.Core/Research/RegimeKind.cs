@@ -4,5 +4,6 @@ public enum RegimeKind
 {
     None,
     IndexTrend,
-    Breadth
+    Breadth,
+    IndexRsi
 }

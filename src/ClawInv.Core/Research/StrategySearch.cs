@@ -186,6 +186,13 @@ public sealed class StrategySearch
             return b >= p.RegimeBreadthThreshold;
         }
 
+        if (p.Regime == RegimeKind.IndexRsi)
+        {
+            var rsi = Rsi(_m.IndexNav, infoT, 14);
+            if (double.IsNaN(rsi)) return false;
+            return rsi >= p.RegimeBreadthThreshold; // reuse threshold as RSI level (e.g. 50/55)
+        }
+
         return true;
     }
 
@@ -339,6 +346,28 @@ public sealed class StrategySearch
         var varSum = vals.Sum(x => (x - mean) * (x - mean));
         var variance = varSum / (vals.Count - 1);
         return Math.Sqrt(variance) * Math.Sqrt(12.0);
+    }
+
+
+    private static double Rsi(double[] series, int t, int period)
+    {
+        if (period < 2) return double.NaN;
+        if (t - period < 1) return double.NaN;
+
+        double gain = 0.0, loss = 0.0;
+        for (var i = t - period + 1; i <= t; i++)
+        {
+            var a = series[i - 1];
+            var b = series[i];
+            if (double.IsNaN(a) || double.IsNaN(b)) return double.NaN;
+            var d = b - a;
+            if (d >= 0) gain += d;
+            else loss += -d;
+        }
+
+        if (loss == 0) return 100.0;
+        var rs = gain / loss;
+        return 100.0 - (100.0 / (1.0 + rs));
     }
 
     private static double SharpeMonthly(IReadOnlyList<double> monthlyReturns)
