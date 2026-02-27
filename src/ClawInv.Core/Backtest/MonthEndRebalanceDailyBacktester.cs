@@ -21,17 +21,16 @@ public static class MonthEndRebalanceDailyBacktester
         if (strat.TopK > 2)
             throw new ArgumentException("MonthEndRebalanceDailyBacktester supports TopK<=2.");
 
-        // Build common daily calendar (intersection of available dates is too strict; use union and nav-at-or-before).
-        var allDates = series
-            .SelectMany(s => s.Points)
-            .Select(p => p.Date)
-            .Where(d => d >= from && d <= to)
-            .Distinct()
-            .OrderBy(d => d)
+        // Build dense daily calendar (UTC date grid). We then use nav-at-or-before per fund.
+        var allDates = Enumerable.Range(0, to.DayNumber - from.DayNumber + 1)
+            .Select(i => from.AddDays(i))
             .ToArray();
 
         if (allDates.Length < 30)
             return new BacktestResult(strat.Id, strat.Name + " (daily month-end rebalance)", from, to, 0, 0m, 0m, null, 0m, 0m, "Insufficient data");
+
+        // Skip weekends to avoid flat/duplicated nav-at-or-before effects
+        allDates = allDates.Where(d => d.DayOfWeek is not DayOfWeek.Saturday and not DayOfWeek.Sunday).ToArray();
 
         var monthEnds = GetMonthEndDates(allDates);
         if (monthEnds.Count < 3)
