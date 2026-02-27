@@ -16,6 +16,9 @@ app.Configure(cfg =>
 
     cfg.AddCommand<BacktestCommand>("backtest")
         .WithDescription("Backtest buy & hold using NAV CSV (Date,NAV)." );
+
+    cfg.AddCommand<DownloadCommand>("download")
+        .WithDescription("Download fund history from Avanza and cache it (outputs CSV)." );
 });
 
 return await app.RunAsync(args);
@@ -102,6 +105,54 @@ sealed class BacktestCommand : Command<BacktestCommand.Settings>
         AnsiConsole.MarkupLine($"CAGR:    [green]{m.Cagr:P2}[/]");
         AnsiConsole.MarkupLine($"MDD:     [red]{m.MaxDrawdown:P2}[/]");
 
+        return 0;
+    }
+}
+
+sealed class DownloadCommand : AsyncCommand<DownloadCommand.Settings>
+{
+    public sealed class Settings : CommandSettings
+    {
+        [CommandOption("--orderbook <ID>")]
+        public string OrderbookId { get; init; } = "";
+
+        [CommandOption("--from <YYYY-MM-DD>")]
+        public string From { get; init; } = "";
+
+        [CommandOption("--to <YYYY-MM-DD>")]
+        public string To { get; init; } = "";
+
+        [CommandOption("--out <PATH>")]
+        public string OutPath { get; init; } = "fund.csv";
+
+        [CommandOption("--cache-dir <DIR>")]
+        public string CacheDir { get; init; } = ".cache/avanza";
+    }
+
+    public override async Task<int> ExecuteAsync(CommandContext context, Settings settings)
+    {
+        if (!DateOnly.TryParse(settings.From, out var from))
+            throw new CommandException("Invalid --from. Expected YYYY-MM-DD.");
+        if (!DateOnly.TryParse(settings.To, out var to))
+            throw new CommandException("Invalid --to. Expected YYYY-MM-DD.");
+
+        var cache = new ClawInv.Core.Infrastructure.SimpleDiskCache(settings.CacheDir);
+
+        using var http = new HttpClient();
+        var client = new AvanzaClient(http, cache);
+        var chart = await client.GetFundChartAsync(settings.OrderbookId, from, to);
+
+        var tz = ClawInv.Core.Avanza.AvanzaChartConverter.GetStockholmTz();
+        var nav = ClawInv.Core.Avanza.AvanzaChartConverter.ToNormalizedNav(chart, tz);
+
+        Directory.CreateDirectory(Path.GetDirectoryName(settings.OutPath) ?? ".");
+
+        await using var writer = new StreamWriter(settings.OutPath);
+        await writer.WriteLineAsync("Date,NAV");
+        foreach (var p in nav)
+            await writer.WriteLineAsync($"{p.Date:yyyy-MM-dd},{p.Nav}");
+
+        AnsiConsole.MarkupLine($"Wrote [green]{nav.Count}[/] rows to [grey]{settings.OutPath}[/]");
         return 0;
     }
 }
