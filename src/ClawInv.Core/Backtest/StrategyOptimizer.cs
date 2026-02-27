@@ -77,7 +77,8 @@ public sealed class StrategyOptimizer
                     Allocation: a,
                     UseAbsoluteMomentumFilter: abs,
                     MovingAverageMonths: 0,
-                    VolatilityLookbackMonths: 0));
+                    VolatilityLookbackMonths: 0,
+                    UseLowVolFilter: false));
 
                 if (++count >= maxStrategiesPerType)
                     break;
@@ -108,7 +109,8 @@ public sealed class StrategyOptimizer
                     Allocation: AllocationMode.EqualWeightTopK,
                     UseAbsoluteMomentumFilter: false,
                     MovingAverageMonths: ma,
-                    VolatilityLookbackMonths: 0));
+                    VolatilityLookbackMonths: 0,
+                    UseLowVolFilter: false));
 
                 if (++count >= maxStrategiesPerType)
                     break;
@@ -139,7 +141,8 @@ public sealed class StrategyOptimizer
                     Allocation: AllocationMode.EqualWeightTopK,
                     UseAbsoluteMomentumFilter: false,
                     MovingAverageMonths: 0,
-                    VolatilityLookbackMonths: vlb));
+                    VolatilityLookbackMonths: vlb,
+                    UseLowVolFilter: false));
 
                 if (++count >= maxStrategiesPerType)
                     break;
@@ -158,7 +161,13 @@ public sealed class StrategyOptimizer
                 Allocation: AllocationMode.EqualWeightTopK,
                 UseAbsoluteMomentumFilter: false,
                 MovingAverageMonths: 0,
-                VolatilityLookbackMonths: 0));
+                VolatilityLookbackMonths: 0,
+                UseLowVolFilter: false));
+        }
+
+        // 5) BestStrategyV1 (explicit)
+        {
+            defs.Add(BestStrategies.BestStrategyV1);
         }
 
         return defs;
@@ -181,6 +190,7 @@ public sealed class StrategyOptimizer
                 StrategyType.TrendFollowing => TrendFollowingBacktester.Run(s, nav, from, to),
                 StrategyType.LowVolatilitySelection => LowVolBacktester.Run(s, nav, from, to),
                 StrategyType.EqualWeightBuyAndHold => EqualWeightBuyHoldBacktester.Run(s, nav, from, to),
+                StrategyType.BestStrategyV1MonthEnd => (MonthEndBestV1Backtester.Run(s, nav, from, to), Array.Empty<PortfolioPoint>()),
                 _ => MomentumRotationBacktester.Run(s, nav, from, to),
             };
 
