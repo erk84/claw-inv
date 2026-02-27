@@ -369,7 +369,87 @@ sealed class SearchBestCommand : AsyncCommand<SearchBestCommand.Settings>
         File.WriteAllText(settings.OutPath, System.Text.Json.JsonSerializer.Serialize(best, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
         AnsiConsole.MarkupLine($"Wrote best strategy to [grey]{settings.OutPath}[/]");
 
+        // Daily validation (final sanity check)
+        var daily = ValidateDaily(best, nav, from, to);
+        AnsiConsole.MarkupLine($"Daily validation => Sharpe: [yellow]{(daily.Sharpe?.ToString("0.##") ?? "n/a")}[/] CAGR: [green]{daily.Cagr:P2}[/] MDD: [red]{daily.MaxDrawdown:P2}[/]");
+
         return 0;
+    }
+
+    private static ClawInv.Core.Backtest.BacktestResult ValidateDaily(
+        ClawInv.Core.Research.TrialResult best,
+        IReadOnlyList<ClawInv.Core.Backtest.NavSeries> nav,
+        DateOnly from,
+        DateOnly to)
+    {
+        var p = best.Params;
+
+        return p.Kind switch
+        {
+            ClawInv.Core.Research.ResearchStrategyKind.LowVol =>
+                ClawInv.Core.Backtest.LowVolBacktester.Run(
+                    new ClawInv.Core.Strategies.StrategyDefinition(
+                        Id: "trial_lowvol",
+                        Name: "Trial LowVol",
+                        Type: ClawInv.Core.Strategies.StrategyType.LowVolatilitySelection,
+                        RebalanceEveryMonths: p.RebalanceMonths,
+                        LookbackMonths: 0,
+                        TopK: p.TopK,
+                        Allocation: ClawInv.Core.Strategies.AllocationMode.EqualWeightTopK,
+                        UseAbsoluteMomentumFilter: false,
+                        MovingAverageMonths: 0,
+                        VolatilityLookbackMonths: p.VolLookbackMonths,
+                        UseLowVolFilter: false),
+                    nav, from, to).result,
+
+            ClawInv.Core.Research.ResearchStrategyKind.Trend =>
+                ClawInv.Core.Backtest.TrendFollowingBacktester.Run(
+                    new ClawInv.Core.Strategies.StrategyDefinition(
+                        Id: "trial_trend",
+                        Name: "Trial Trend",
+                        Type: ClawInv.Core.Strategies.StrategyType.TrendFollowing,
+                        RebalanceEveryMonths: p.RebalanceMonths,
+                        LookbackMonths: 0,
+                        TopK: p.TopK,
+                        Allocation: ClawInv.Core.Strategies.AllocationMode.EqualWeightTopK,
+                        UseAbsoluteMomentumFilter: false,
+                        MovingAverageMonths: p.TrendMaMonths,
+                        VolatilityLookbackMonths: 0,
+                        UseLowVolFilter: false),
+                    nav, from, to).result,
+
+            ClawInv.Core.Research.ResearchStrategyKind.MeanReversion =>
+                ClawInv.Core.Backtest.MomentumRotationBacktester.Run(
+                    new ClawInv.Core.Strategies.StrategyDefinition(
+                        Id: "trial_meanrev",
+                        Name: "Trial MeanReversion (implemented as negative momentum selection)",
+                        Type: ClawInv.Core.Strategies.StrategyType.MomentumRotation,
+                        RebalanceEveryMonths: p.RebalanceMonths,
+                        LookbackMonths: p.LookbackMonths,
+                        TopK: p.TopK,
+                        Allocation: ClawInv.Core.Strategies.AllocationMode.EqualWeightTopK,
+                        UseAbsoluteMomentumFilter: false,
+                        MovingAverageMonths: 0,
+                        VolatilityLookbackMonths: 0,
+                        UseLowVolFilter: false),
+                    nav, from, to).result,
+
+            _ =>
+                ClawInv.Core.Backtest.MomentumRotationBacktester.Run(
+                    new ClawInv.Core.Strategies.StrategyDefinition(
+                        Id: "trial_mom",
+                        Name: "Trial Momentum",
+                        Type: ClawInv.Core.Strategies.StrategyType.MomentumRotation,
+                        RebalanceEveryMonths: p.RebalanceMonths,
+                        LookbackMonths: p.LookbackMonths,
+                        TopK: p.TopK,
+                        Allocation: ClawInv.Core.Strategies.AllocationMode.EqualWeightTopK,
+                        UseAbsoluteMomentumFilter: p.UseAbsoluteMomentum,
+                        MovingAverageMonths: 0,
+                        VolatilityLookbackMonths: p.VolLookbackMonths,
+                        UseLowVolFilter: true),
+                    nav, from, to).result,
+        };
     }
 
     private static ClawInv.Core.Research.TrialParams Sample(Random rnd)
@@ -377,28 +457,30 @@ sealed class SearchBestCommand : AsyncCommand<SearchBestCommand.Settings>
         int Pick(params int[] xs) => xs[rnd.Next(xs.Length)];
         bool Flip(double p) => rnd.NextDouble() < p;
 
-        var lookback = Pick(1, 2, 3, 4, 6, 9, 12, 15, 18);
+        var kind = (ClawInv.Core.Research.ResearchStrategyKind)rnd.Next(0, 4);
+
+        var lookback = Pick(1, 2, 3, 4, 6, 9, 12);
         var reb = Pick(1, 2, 3);
         var topK = Pick(1, 2, 3, 5);
-        var abs = Flip(0.5);
 
-        var useTrend = Flip(0.5);
-        var ma = useTrend ? Pick(6, 9, 12, 18) : 0;
+        var abs = kind == ClawInv.Core.Research.ResearchStrategyKind.Momentum && Flip(0.5);
 
-        var useLowVol = Flip(0.5);
-        var volLb = useLowVol ? Pick(3, 6, 12) : 0;
+        var volLb = (kind == ClawInv.Core.Research.ResearchStrategyKind.LowVol || kind == ClawInv.Core.Research.ResearchStrategyKind.Momentum)
+            ? Pick(3, 6, 12)
+            : 0;
 
-        var penalty = Pick(0, 1, 2, 3, 4) * 0.1; // 0..0.4
+        var ma = kind == ClawInv.Core.Research.ResearchStrategyKind.Trend
+            ? Pick(6, 9, 12, 18)
+            : 0;
 
         return new ClawInv.Core.Research.TrialParams(
+            Kind: kind,
             LookbackMonths: lookback,
             RebalanceMonths: reb,
             TopK: topK,
             UseAbsoluteMomentum: abs,
             VolLookbackMonths: Math.Max(2, volLb),
-            UseLowVolFilter: useLowVol,
             TrendMaMonths: Math.Max(1, ma),
-            UseTrendFilter: useTrend,
-            ScoreMddPenalty: penalty);
+            MaxDrawdownFloor: -0.20);
     }
 }
