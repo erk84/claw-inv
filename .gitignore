@@ -12,3 +12,6 @@ TestResults/
 
 # Misc
 .DS_Store
+
+# Cache
+.cache/
