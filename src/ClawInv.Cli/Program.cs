@@ -382,7 +382,7 @@ sealed class SearchBestCommand : AsyncCommand<SearchBestCommand.Settings>
 
             if (i % 10_000 == 0 && bestMonthEnd is not null)
             {
-                AnsiConsole.MarkupLine($"T={i:N0}: best(month-end) score={bestMonthEnd.Score:0.000} sharpe={bestMonthEnd.Sharpe:0.##} cagr={bestMonthEnd.Cagr:P2} mdd={bestMonthEnd.MaxDrawdown:P2} kind={bestMonthEnd.Params.Kind} lookback={bestMonthEnd.Params.LookbackMonths} reb={bestMonthEnd.Params.RebalanceMonths} topK={bestMonthEnd.Params.TopK} abs={bestMonthEnd.Params.UseAbsoluteMomentum} ma={bestMonthEnd.Params.TrendMaMonths} volLb={bestMonthEnd.Params.VolLookbackMonths} mddFloor={bestMonthEnd.Params.MaxDrawdownFloor:P0}" );
+                AnsiConsole.MarkupLine($"T={i:N0}: best(month-end) score={bestMonthEnd.Score:0.000} sharpe={bestMonthEnd.Sharpe:0.##} cagr={bestMonthEnd.Cagr:P2} mdd={bestMonthEnd.MaxDrawdown:P2} kind={bestMonthEnd.Params.Kind} lookback={bestMonthEnd.Params.LookbackMonths} reb={bestMonthEnd.Params.RebalanceMonths} topK={bestMonthEnd.Params.TopK} abs={bestMonthEnd.Params.UseAbsoluteMomentum} ma={bestMonthEnd.Params.TrendMaMonths} volLb={bestMonthEnd.Params.VolLookbackMonths} regime={bestMonthEnd.Params.Regime} regMA={bestMonthEnd.Params.RegimeMaMonths} breadthTh={bestMonthEnd.Params.RegimeBreadthThreshold:0.##} ddLambda={bestMonthEnd.Params.MaxDrawdownPenaltyLambda:0.##}" );
             }
         }
 
@@ -400,12 +400,10 @@ sealed class SearchBestCommand : AsyncCommand<SearchBestCommand.Settings>
         foreach (var cand in ordered)
         {
             var daily = ValidateDaily(cand, nav, from, to);
-            if (daily.MaxDrawdown >= -0.20m)
-            {
-                bestDailyOk = cand;
-                bestDailyRes = daily;
-                break;
-            }
+            // No hard MDD cutoff anymore; we just select by best month-end score and always report daily.
+            bestDailyOk = cand;
+            bestDailyRes = daily;
+            break;
         }
 
         var chosen = bestDailyOk ?? bestMonthEnd;
@@ -417,8 +415,6 @@ sealed class SearchBestCommand : AsyncCommand<SearchBestCommand.Settings>
         var chosenDaily = bestDailyRes ?? ValidateDaily(chosen, nav, from, to);
         AnsiConsole.MarkupLine($"Daily validation (chosen) => Sharpe: [yellow]{(chosenDaily.Sharpe?.ToString("0.##") ?? "n/a")}[/] CAGR: [green]{chosenDaily.Cagr:P2}[/] MDD: [red]{chosenDaily.MaxDrawdown:P2}[/]  ({chosenDaily.Notes})");
 
-        if (bestDailyOk is null)
-            AnsiConsole.MarkupLine("[red]No candidate passed daily MDD floor -20%.[/]");
 
         return 0;
     }
@@ -500,7 +496,7 @@ sealed class SearchBestCommand : AsyncCommand<SearchBestCommand.Settings>
             VolatilityLookbackMonths: p.VolLookbackMonths,
             UseLowVolFilter: true);
 
-        return ClawInv.Core.Backtest.MonthEndRebalanceDailyBacktester.Run(def, nav, from, to, maxDrawdownFloor: -0.20m);
+        return ClawInv.Core.Backtest.MonthEndRebalanceDailyBacktester.Run(def, nav, from, to, maxDrawdownFloor: -1.0m);
 
     }
 
@@ -532,6 +528,21 @@ sealed class SearchBestCommand : AsyncCommand<SearchBestCommand.Settings>
                 ? Pick(6, 9, 12, 18)
                 : 0);
 
+        // Regime filter (soft): choose one of None / IndexTrend / Breadth
+        var regime = rnd.NextDouble() < 0.20
+            ? ClawInv.Core.Research.RegimeKind.None
+            : (rnd.NextDouble() < 0.50 ? ClawInv.Core.Research.RegimeKind.IndexTrend : ClawInv.Core.Research.RegimeKind.Breadth);
+
+        var regimeMa = regime == ClawInv.Core.Research.RegimeKind.IndexTrend
+            ? Pick(6, 9, 12, 18)
+            : 0;
+
+        var breadthTh = regime == ClawInv.Core.Research.RegimeKind.Breadth
+            ? (Flip(0.5) ? 0.55 : 0.65)
+            : 0.0;
+
+        var lambda = Flip(0.5) ? 0.5 : 1.0; // DD penalty strength
+
         return new ClawInv.Core.Research.TrialParams(
             Kind: kind,
             LookbackMonths: lookback,
@@ -540,6 +551,9 @@ sealed class SearchBestCommand : AsyncCommand<SearchBestCommand.Settings>
             UseAbsoluteMomentum: abs,
             VolLookbackMonths: Math.Max(2, volLb),
             TrendMaMonths: Math.Max(1, ma),
-            MaxDrawdownFloor: -0.20);
+            Regime: regime,
+            RegimeMaMonths: Math.Max(1, regimeMa),
+            RegimeBreadthThreshold: breadthTh,
+            MaxDrawdownPenaltyLambda: lambda);
     }
 }

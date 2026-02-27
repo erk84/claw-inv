@@ -49,6 +49,58 @@ public static class FeatureBuilder
             }
         }
 
+        // Build equal-weight index NAV (normalized to 1 at first valid point)
+        var indexNav = new double[T];
+        var idxBase = double.NaN;
+        for (var t = 0; t < T; t++)
+        {
+            var sum = 0.0;
+            var n = 0;
+            for (var f = 0; f < F; f++)
+            {
+                var v = nav[t, f];
+                if (double.IsNaN(v)) continue;
+                sum += v;
+                n++;
+            }
+
+            var avg = n > 0 ? sum / n : double.NaN;
+            if (double.IsNaN(idxBase) && !double.IsNaN(avg)) idxBase = avg;
+            indexNav[t] = (!double.IsNaN(avg) && idxBase > 0) ? (avg / idxBase) : double.NaN;
+        }
+
+        // Breadth: fraction of funds above their 12-month MA
+        var breadth12 = new double[T];
+        for (var t = 0; t < T; t++)
+        {
+            if (t < 12) { breadth12[t] = double.NaN; continue; }
+
+            var ok = 0;
+            var tot = 0;
+            for (var f = 0; f < F; f++)
+            {
+                var now = nav[t, f];
+                if (double.IsNaN(now)) continue;
+
+                var sumMa = 0.0;
+                var nMa = 0;
+                for (var i = t - 12; i <= t; i++)
+                {
+                    var vv = nav[i, f];
+                    if (double.IsNaN(vv)) continue;
+                    sumMa += vv;
+                    nMa++;
+                }
+
+                if (nMa < 6) continue;
+                var maVal = sumMa / nMa;
+                tot++;
+                if (now > maVal) ok++;
+            }
+
+            breadth12[t] = tot > 0 ? (double)ok / tot : double.NaN;
+        }
+
         return new FeatureMatrices
         {
             Dates = dates,
@@ -56,6 +108,8 @@ public static class FeatureBuilder
             FundIndex = fundIndex,
             Nav = nav,
             Ret1M = ret1,
+            IndexNav = indexNav,
+            Breadth12 = breadth12,
         };
     }
 }
