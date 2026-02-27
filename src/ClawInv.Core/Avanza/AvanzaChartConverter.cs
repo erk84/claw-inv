@@ -1,3 +1,5 @@
+using ClawInv.Core;
+
 namespace ClawInv.Core.Avanza;
 
 public static class AvanzaChartConverter
