@@ -42,35 +42,123 @@ public sealed class StrategyOptimizer
         return list;
     }
 
-    public IReadOnlyList<StrategyDefinition> GenerateGrid(int maxStrategies = 1000)
+    public IReadOnlyList<StrategyDefinition> GenerateGrid(int maxStrategiesPerType = 1000)
     {
         var defs = new List<StrategyDefinition>();
 
-        var lookbacks = Enumerable.Range(1, 18).ToArray();          // 1..18 months
-        var topKs = new[] { 1, 2, 3, 5 };
-        var rebals = new[] { 1, 2, 3 };
-        var allocs = new[] { AllocationMode.Top1, AllocationMode.EqualWeightTopK };
-
-        foreach (var lb in lookbacks)
-        foreach (var k in topKs)
-        foreach (var rm in rebals)
-        foreach (var a in allocs)
+        // 1) Momentum rotation + optional absolute filter
         {
-            var allocName = a == AllocationMode.Top1 ? "top1" : $"eq{k}";
-            var id = $"mom_lb{lb}_rm{rm}_{allocName}";
-            var name = $"Momentum rotation (LB={lb}m, Rebal={rm}m, Alloc={allocName})";
+            var lookbacks = Enumerable.Range(1, 18).ToArray();
+            var topKs = new[] { 1, 2, 3, 5 };
+            var rebals = new[] { 1, 2, 3 };
+            var allocs = new[] { AllocationMode.Top1, AllocationMode.EqualWeightTopK };
+            var absFilters = new[] { false, true };
 
+            var count = 0;
+            foreach (var lb in lookbacks)
+            foreach (var k in topKs)
+            foreach (var rm in rebals)
+            foreach (var a in allocs)
+            foreach (var abs in absFilters)
+            {
+                var allocName = a == AllocationMode.Top1 ? "top1" : $"eq{k}";
+                var absName = abs ? "abs" : "rel";
+
+                var id = $"mom_{absName}_lb{lb}_rm{rm}_{allocName}";
+                var name = $"Momentum ({absName}) LB={lb}m Rebal={rm}m Alloc={allocName}";
+
+                defs.Add(new StrategyDefinition(
+                    Id: id,
+                    Name: name,
+                    Type: StrategyType.MomentumRotation,
+                    RebalanceEveryMonths: rm,
+                    LookbackMonths: lb,
+                    TopK: k,
+                    Allocation: a,
+                    UseAbsoluteMomentumFilter: abs,
+                    MovingAverageMonths: 0,
+                    VolatilityLookbackMonths: 0));
+
+                if (++count >= maxStrategiesPerType)
+                    break;
+            }
+        }
+
+        // 2) Trend following
+        {
+            var maMonths = new[] { 6, 9, 12, 18 };
+            var topKs = new[] { 1, 2, 3, 5 };
+            var rebals = new[] { 1, 2, 3 };
+
+            var count = 0;
+            foreach (var ma in maMonths)
+            foreach (var k in topKs)
+            foreach (var rm in rebals)
+            {
+                var id = $"trend_ma{ma}_rm{rm}_k{k}";
+                var name = $"Trend MA={ma}m Rebal={rm}m TopK={k}";
+
+                defs.Add(new StrategyDefinition(
+                    Id: id,
+                    Name: name,
+                    Type: StrategyType.TrendFollowing,
+                    RebalanceEveryMonths: rm,
+                    LookbackMonths: 0,
+                    TopK: k,
+                    Allocation: AllocationMode.EqualWeightTopK,
+                    UseAbsoluteMomentumFilter: false,
+                    MovingAverageMonths: ma,
+                    VolatilityLookbackMonths: 0));
+
+                if (++count >= maxStrategiesPerType)
+                    break;
+            }
+        }
+
+        // 3) Low volatility selection
+        {
+            var volLookback = new[] { 3, 6, 12 };
+            var topKs = new[] { 1, 2, 3, 5 };
+            var rebals = new[] { 1, 2, 3 };
+
+            var count = 0;
+            foreach (var vlb in volLookback)
+            foreach (var k in topKs)
+            foreach (var rm in rebals)
+            {
+                var id = $"lowvol_lb{vlb}_rm{rm}_k{k}";
+                var name = $"LowVol LB={vlb}m Rebal={rm}m TopK={k}";
+
+                defs.Add(new StrategyDefinition(
+                    Id: id,
+                    Name: name,
+                    Type: StrategyType.LowVolatilitySelection,
+                    RebalanceEveryMonths: rm,
+                    LookbackMonths: 0,
+                    TopK: k,
+                    Allocation: AllocationMode.EqualWeightTopK,
+                    UseAbsoluteMomentumFilter: false,
+                    MovingAverageMonths: 0,
+                    VolatilityLookbackMonths: vlb));
+
+                if (++count >= maxStrategiesPerType)
+                    break;
+            }
+        }
+
+        // 4) Equal-weight buy & hold baseline
+        {
             defs.Add(new StrategyDefinition(
-                Id: id,
-                Name: name,
-                Type: "momentum_rotation",
-                LookbackMonths: lb,
-                TopK: k,
-                RebalanceEveryMonths: rm,
-                Allocation: a));
-
-            if (defs.Count >= maxStrategies)
-                return defs;
+                Id: "ew_buyhold_rm1",
+                Name: "EqualWeight buy&hold (monthly rebalance)",
+                Type: StrategyType.EqualWeightBuyAndHold,
+                RebalanceEveryMonths: 1,
+                LookbackMonths: 0,
+                TopK: int.MaxValue,
+                Allocation: AllocationMode.EqualWeightTopK,
+                UseAbsoluteMomentumFilter: false,
+                MovingAverageMonths: 0,
+                VolatilityLookbackMonths: 0));
         }
 
         return defs;
@@ -87,17 +175,36 @@ public sealed class StrategyOptimizer
 
         foreach (var s in strategies)
         {
-            var (res, _) = MomentumRotationBacktester.Run(s, nav, from, to);
+            var (res, _) = s.Type switch
+            {
+                StrategyType.MomentumRotation => MomentumRotationBacktester.Run(s, nav, from, to),
+                StrategyType.TrendFollowing => TrendFollowingBacktester.Run(s, nav, from, to),
+                StrategyType.LowVolatilitySelection => LowVolBacktester.Run(s, nav, from, to),
+                StrategyType.EqualWeightBuyAndHold => EqualWeightBuyHoldBacktester.Run(s, nav, from, to),
+                _ => MomentumRotationBacktester.Run(s, nav, from, to),
+            };
+
             scored.Add(new StrategyResult(s, res));
         }
 
-        var top = scored
+        return scored
             .OrderByDescending(x => x.Result.Sharpe ?? decimal.MinValue)
             .ThenByDescending(x => x.Result.Cagr)
             .Take(keepTop)
             .ToList();
+    }
 
-        return top;
+    public IReadOnlyDictionary<StrategyType, StrategyResult> BestPerType(
+        IReadOnlyList<StrategyDefinition> strategies,
+        IReadOnlyList<NavSeries> nav,
+        DateOnly from,
+        DateOnly to)
+    {
+        return strategies
+            .GroupBy(s => s.Type)
+            .ToDictionary(
+                g => g.Key,
+                g => RankTop(g.ToList(), nav, from, to, keepTop: 1).Single());
     }
 
     public void WriteTopStrategies(string outDir, IReadOnlyList<StrategyResult> top)
@@ -112,5 +219,12 @@ public sealed class StrategyOptimizer
 
         var indexPath = Path.Combine(outDir, "top100.json");
         File.WriteAllText(indexPath, JsonSerializer.Serialize(top, new JsonSerializerOptions { WriteIndented = true }));
+    }
+
+    public void WriteBestPerType(string outDir, IReadOnlyDictionary<StrategyType, StrategyResult> best)
+    {
+        Directory.CreateDirectory(outDir);
+        var path = Path.Combine(outDir, "best_per_type.json");
+        File.WriteAllText(path, JsonSerializer.Serialize(best, new JsonSerializerOptions { WriteIndented = true }));
     }
 }
