@@ -15,3 +15,10 @@ TestResults/
 
 # Cache
 .cache/
+
+# Generated strategies
+strategies/top/
+
+# Local universe
+data/universe.json
+data/universe.generated.json

@@ -19,6 +19,12 @@ app.Configure(cfg =>
 
     cfg.AddCommand<DownloadCommand>("download")
         .WithDescription("Download fund history from Avanza and cache it (outputs CSV)." );
+
+    cfg.AddCommand<OptimizeCommand>("optimize")
+        .WithDescription("Run strategy search over a fund universe and write top strategies to disk." );
+
+    cfg.AddCommand<GenUniverseCommand>("gen-universe")
+        .WithDescription("Generate a universe file by sampling Avanza search results (rate limited)." );
 });
 
 return await app.RunAsync(args);
@@ -153,6 +159,116 @@ sealed class DownloadCommand : AsyncCommand<DownloadCommand.Settings>
             await writer.WriteLineAsync($"{p.Date:yyyy-MM-dd},{p.Nav}");
 
         AnsiConsole.MarkupLine($"Wrote [green]{nav.Count}[/] rows to [grey]{settings.OutPath}[/]");
+        return 0;
+    }
+}
+
+sealed class OptimizeCommand : AsyncCommand<OptimizeCommand.Settings>
+{
+    public sealed class Settings : CommandSettings
+    {
+        [CommandOption("--universe <PATH>")]
+        public string UniversePath { get; init; } = "data/universe.json";
+
+        [CommandOption("--from <YYYY-MM-DD>")]
+        public string From { get; init; } = "";
+
+        [CommandOption("--to <YYYY-MM-DD>")]
+        public string To { get; init; } = "";
+
+        [CommandOption("--keep <N>")]
+        public int Keep { get; init; } = 100;
+
+        [CommandOption("--out-dir <DIR>")]
+        public string OutDir { get; init; } = "strategies/top";
+
+        [CommandOption("--cache-dir <DIR>")]
+        public string CacheDir { get; init; } = ".cache/avanza";
+
+        [CommandOption("--nav-store <DIR>")]
+        public string NavStoreDir { get; init; } = ".cache/nav";
+
+        [CommandOption("--years <N>")]
+        public int Years { get; init; } = 10;
+    }
+
+    public override async Task<int> ExecuteAsync(CommandContext context, Settings settings)
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+
+        var from = !string.IsNullOrWhiteSpace(settings.From) && DateOnly.TryParse(settings.From, out var f)
+            ? f
+            : today.AddYears(-settings.Years);
+
+        var to = !string.IsNullOrWhiteSpace(settings.To) && DateOnly.TryParse(settings.To, out var t)
+            ? t
+            : today;
+
+        var universe = ClawInv.Core.Backtest.UniverseLoader.Load(settings.UniversePath);
+
+        var cache = new ClawInv.Core.Infrastructure.SimpleDiskCache(settings.CacheDir);
+        var navStore = new ClawInv.Core.Backtest.NavDataStore(settings.NavStoreDir);
+
+        using var http = new HttpClient();
+        var avanza = new AvanzaClient(http, cache);
+
+        var tz = ClawInv.Core.Avanza.AvanzaChartConverter.GetStockholmTz();
+        var opt = new ClawInv.Core.Backtest.StrategyOptimizer(avanza, navStore, tz);
+
+        AnsiConsole.MarkupLine($"Loading NAV for [green]{universe.Funds.Count}[/] funds ({from}..{to})...");
+        var nav = await opt.LoadUniverseNavAsync(universe, from, to);
+
+        var grid = opt.GenerateGrid();
+        AnsiConsole.MarkupLine($"Generated [green]{grid.Count}[/] strategies. Running backtests...");
+
+        var top = opt.RankTop(grid, nav, from, to, settings.Keep);
+        opt.WriteTopStrategies(settings.OutDir, top);
+
+        AnsiConsole.MarkupLine($"Wrote top [green]{top.Count}[/] strategies to [grey]{settings.OutDir}[/]");
+
+        // Print best one
+        var best = top.FirstOrDefault();
+        if (best is not null)
+        {
+            AnsiConsole.MarkupLine($"Best: [bold]{best.Strategy.Name}[/]");
+            AnsiConsole.MarkupLine($"Sharpe: [yellow]{(best.Result.Sharpe?.ToString("0.##") ?? "n/a")}[/]");
+            AnsiConsole.MarkupLine($"CAGR:   [green]{best.Result.Cagr:P2}[/]");
+            AnsiConsole.MarkupLine($"MDD:    [red]{best.Result.MaxDrawdown:P2}[/]");
+        }
+
+        return 0;
+    }
+}
+
+sealed class GenUniverseCommand : AsyncCommand<GenUniverseCommand.Settings>
+{
+    public sealed class Settings : CommandSettings
+    {
+        [CommandOption("--target <N>")]
+        public int Target { get; init; } = 100;
+
+        [CommandOption("--max-requests <N>")]
+        public int MaxRequests { get; init; } = 40;
+
+        [CommandOption("--out <PATH>")]
+        public string OutPath { get; init; } = "data/universe.generated.json";
+
+        [CommandOption("--cache-dir <DIR>")]
+        public string CacheDir { get; init; } = ".cache/avanza";
+    }
+
+    public override async Task<int> ExecuteAsync(CommandContext context, Settings settings)
+    {
+        var cache = new ClawInv.Core.Infrastructure.SimpleDiskCache(settings.CacheDir);
+        using var http = new HttpClient();
+        var avanza = new AvanzaClient(http, cache);
+
+        var gen = new ClawInv.Core.Backtest.UniverseGenerator(avanza);
+        AnsiConsole.MarkupLine($"Generating universe: target [green]{settings.Target}[/] funds (max requests {settings.MaxRequests})...");
+        var u = await gen.GenerateAsync(settings.Target, settings.MaxRequests);
+        ClawInv.Core.Backtest.UniverseGenerator.Save(u, settings.OutPath);
+
+        AnsiConsole.MarkupLine($"Wrote [green]{u.Funds.Count}[/] funds to [grey]{settings.OutPath}[/]");
         return 0;
     }
 }
