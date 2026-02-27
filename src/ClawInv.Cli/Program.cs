@@ -132,9 +132,9 @@ sealed class DownloadCommand : AsyncCommand<DownloadCommand.Settings>
     public override async Task<int> ExecuteAsync(CommandContext context, Settings settings)
     {
         if (!DateOnly.TryParse(settings.From, out var from))
-            throw new CommandException("Invalid --from. Expected YYYY-MM-DD.");
+            throw new ArgumentException("Invalid --from. Expected YYYY-MM-DD.");
         if (!DateOnly.TryParse(settings.To, out var to))
-            throw new CommandException("Invalid --to. Expected YYYY-MM-DD.");
+            throw new ArgumentException("Invalid --to. Expected YYYY-MM-DD.");
 
         var cache = new ClawInv.Core.Infrastructure.SimpleDiskCache(settings.CacheDir);
 
