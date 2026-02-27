@@ -21,6 +21,9 @@ public sealed class AvanzaClient
             _http.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0");
 
         _rateLimiter = rateLimiter ?? new RateLimiter(TimeSpan.FromMilliseconds(500));
+
+        // lightweight headers that seem safe
+        _http.DefaultRequestHeaders.Accept.ParseAdd("application/json");
     }
 
     public async Task<IReadOnlyList<AvanzaFundHit>> SearchFundsAsync(string name, CancellationToken ct = default)
@@ -33,18 +36,32 @@ public sealed class AvanzaClient
         };
         req.Headers.Add("X-Requested-With", "XMLHttpRequest");
 
-        var res = await _http.SendAsync(req, ct);
-        res.EnsureSuccessStatusCode();
-
+        var res = await SendWithRetryAsync(req, ct);
         var payload = await res.Content.ReadFromJsonAsync<AvanzaSearchResponse>(cancellationToken: ct);
         return payload?.FundSearchViews ?? [];
     }
 
-    /// <summary>
-    /// Download fund chart series for an explicit date interval.
-    /// Example:
-    ///   /_api/fund-guide/chart/1270939/2022-11-01/2025-11-04
-    /// </summary>
+    public async Task<AvanzaFundListResponse> GetFundListPageAsync(int startIndex, double? maxTotalFee = null, CancellationToken ct = default)
+    {
+        await _rateLimiter.WaitAsync(ct);
+
+        var url = "_api/fund-guide/list?shouldCheckFundExcludedFromPromotion=true";
+        var body = AvanzaFundListRequest.Default(startIndex, maxTotalFee);
+
+        var req = new HttpRequestMessage(HttpMethod.Post, url)
+        {
+            Content = JsonContent.Create(body)
+        };
+        req.Headers.Add("X-Requested-With", "XMLHttpRequest");
+        req.Headers.TryAddWithoutValidation("Origin", "https://www.avanza.se");
+        req.Headers.TryAddWithoutValidation("Referer", "https://www.avanza.se/fonder/handla-fonder.html/list?sortField=developmentThreeYears&sortDirection=DESCENDING&selectedTab=overview");
+
+        var res = await SendWithRetryAsync(req, ct);
+        var payload = await res.Content.ReadFromJsonAsync<AvanzaFundListResponse>(cancellationToken: ct);
+
+        return payload ?? new AvanzaFundListResponse([], 0);
+    }
+
     public async Task<AvanzaChartResponse> GetFundChartAsync(
         string orderbookId,
         DateOnly from,
@@ -67,18 +84,31 @@ public sealed class AvanzaClient
                 return cached;
         }
 
-        // Be gentle: rate limit + exponential backoff on 429/503
+        using var req = new HttpRequestMessage(HttpMethod.Get, url);
+        req.Headers.Add("X-Requested-With", "XMLHttpRequest");
+        req.Headers.TryAddWithoutValidation("Referer", "https://www.avanza.se/fonder/handla-fonder.html");
+
+        var res = await SendWithRetryAsync(req, ct);
+
+        var json = await res.Content.ReadAsStringAsync(ct);
+        var parsed = JsonSerializer.Deserialize<AvanzaChartResponse>(json,
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+        if (parsed is null)
+            throw new InvalidOperationException("Failed to parse Avanza chart response");
+
+        _cache?.Write(cacheKey, json);
+        return parsed;
+    }
+
+    private async Task<HttpResponseMessage> SendWithRetryAsync(HttpRequestMessage req, CancellationToken ct)
+    {
         var attempt = 0;
         while (true)
         {
             attempt++;
-            await _rateLimiter.WaitAsync(ct);
 
-            using var req = new HttpRequestMessage(HttpMethod.Get, url);
-            req.Headers.Add("X-Requested-With", "XMLHttpRequest");
-            req.Headers.Accept.ParseAdd("application/json");
-
-            using var res = await _http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
+            var res = await _http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
 
             if (res.StatusCode is HttpStatusCode.TooManyRequests or HttpStatusCode.ServiceUnavailable)
             {
@@ -91,16 +121,7 @@ public sealed class AvanzaClient
             }
 
             res.EnsureSuccessStatusCode();
-
-            var json = await res.Content.ReadAsStringAsync(ct);
-            var parsed = JsonSerializer.Deserialize<AvanzaChartResponse>(json,
-                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-
-            if (parsed is null)
-                throw new InvalidOperationException("Failed to parse Avanza chart response");
-
-            _cache?.Write(cacheKey, json);
-            return parsed;
+            return res;
         }
     }
 }

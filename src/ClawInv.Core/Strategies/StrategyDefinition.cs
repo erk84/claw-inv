@@ -9,9 +9,20 @@ public enum AllocationMode
 public sealed record StrategyDefinition(
     string Id,
     string Name,
-    string Type,
+    StrategyType Type,
+
+    // generic knobs
+    int RebalanceEveryMonths,
+
+    // momentum knobs
     int LookbackMonths,
     int TopK,
-    int RebalanceEveryMonths,
-    AllocationMode Allocation
+    AllocationMode Allocation,
+    bool UseAbsoluteMomentumFilter,
+
+    // trend knobs
+    int MovingAverageMonths,
+
+    // risk knobs
+    int VolatilityLookbackMonths
 );

@@ -1,4 +1,3 @@
-using System.Text.Json;
 using ClawInv.Core.Avanza;
 
 namespace ClawInv.Core.Backtest;
@@ -12,39 +11,49 @@ public sealed class UniverseGenerator
         _avanza = avanza;
     }
 
-    public async Task<Universe> GenerateAsync(int targetFunds, int maxRequests, CancellationToken ct = default)
+    public async Task<Universe> GenerateFromFundListAsync(
+        int targetFunds,
+        int ratingLimit,
+        double totalFeeLimit,
+        int riskLimit,
+        CancellationToken ct = default)
     {
-        var rnd = new Random(1337);
         var seen = new Dictionary<string, FundRef>();
 
-        string RandomQuery()
-        {
-            const string letters = "abcdefghijklmnopqrstuvwxyz";
-            var len = rnd.Next(2, 4); // 2-3
-            return new string(Enumerable.Range(0, len).Select(_ => letters[rnd.Next(letters.Length)]).ToArray());
-        }
+        var startIndex = 0;
+        var total = int.MaxValue;
 
-        for (var i = 0; i < maxRequests && seen.Count < targetFunds; i++)
+        // We page until we have enough or no more funds.
+        while (startIndex < total && seen.Count < targetFunds)
         {
-            var q = i == 0 ? "" : RandomQuery();
-            var hits = await _avanza.SearchFundsAsync(q, ct);
-            foreach (var h in hits)
+            var page = await _avanza.GetFundListPageAsync(startIndex, maxTotalFee: totalFeeLimit, ct);
+            total = page.TotalNoFunds;
+
+            if (page.FundListViews.Count == 0)
+                break;
+
+            foreach (var f in page.FundListViews)
             {
-                if (!seen.ContainsKey(h.OrderbookId))
-                    seen[h.OrderbookId] = new FundRef(h.Name, h.OrderbookId);
+                if (string.IsNullOrWhiteSpace(f.OrderbookId))
+                    continue;
+
+                var ok = f.Rating.HasValue && f.Rating.Value >= ratingLimit
+                      && f.TotalFee.HasValue && f.TotalFee.Value <= totalFeeLimit
+                      && f.Risk.HasValue && f.Risk.Value >= riskLimit;
+
+                if (!ok)
+                    continue;
+
+                if (!seen.ContainsKey(f.OrderbookId))
+                    seen[f.OrderbookId] = new FundRef(f.Name, f.OrderbookId);
 
                 if (seen.Count >= targetFunds)
                     break;
             }
+
+            startIndex += page.FundListViews.Count;
         }
 
         return new Universe(seen.Values.OrderBy(x => x.Name).ToList());
-    }
-
-    public static void Save(Universe u, string path)
-    {
-        Directory.CreateDirectory(Path.GetDirectoryName(path) ?? ".");
-        var json = JsonSerializer.Serialize(u, new JsonSerializerOptions { WriteIndented = true });
-        File.WriteAllText(path, json);
     }
 }
