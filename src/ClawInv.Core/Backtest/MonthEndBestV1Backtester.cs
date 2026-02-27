@@ -26,7 +26,10 @@ public static class MonthEndBestV1Backtester
             UseAbsoluteMomentum: strat.UseAbsoluteMomentumFilter,
             VolLookbackMonths: Math.Max(2, strat.VolatilityLookbackMonths),
             TrendMaMonths: Math.Max(1, strat.MovingAverageMonths),
-            MaxDrawdownFloor: -1.0
+            Regime: RegimeKind.None,
+            RegimeMaMonths: 1,
+            RegimeBreadthThreshold: 0.0,
+            MaxDrawdownPenaltyLambda: 0.0
         );
 
         var r = search.Evaluate(p);

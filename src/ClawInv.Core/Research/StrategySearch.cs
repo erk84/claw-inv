@@ -39,16 +39,24 @@ public sealed class StrategySearch
 
                 var infoT = t - 1;
 
-                var selected = p.Kind switch
+                if (!IsRiskOn(p, infoT))
                 {
-                    ResearchStrategyKind.Momentum => SelectMomentum(p, infoT, lb, volLb, ma),
-                    ResearchStrategyKind.LowVol => SelectLowVol(p, infoT, volLb),
-                    ResearchStrategyKind.Trend => SelectTrend(p, infoT, ma),
-                    ResearchStrategyKind.MeanReversion => SelectMeanReversion(p, infoT, lb),
-                    _ => Array.Empty<int>()
-                };
+                    // CASH
+                    // holdings stay empty
+                }
+                else
+                {
+                    var selected = p.Kind switch
+                    {
+                        ResearchStrategyKind.Momentum => SelectMomentum(p, infoT, lb, volLb, ma),
+                        ResearchStrategyKind.LowVol => SelectLowVol(p, infoT, volLb),
+                        ResearchStrategyKind.Trend => SelectTrend(p, infoT, ma),
+                        ResearchStrategyKind.MeanReversion => SelectMeanReversion(p, infoT, lb),
+                        _ => Array.Empty<int>()
+                    };
 
-                holdings.AddRange(selected);
+                    holdings.AddRange(selected);
+                }
             }
 
             // apply return from t-1 -> t on current holdings
@@ -72,9 +80,7 @@ public sealed class StrategySearch
             var dd = equity / peak - 1.0;
             mdd = Math.Min(mdd, dd);
 
-            // hard constraint early exit
-            if (mdd < p.MaxDrawdownFloor)
-                return new TrialResult(p, double.NaN, double.NaN, mdd, double.NegativeInfinity);
+            // no hard constraint: we penalize drawdown in score instead (more robust search)
         }
 
         // compute metrics using monthly equity returns
@@ -94,15 +100,23 @@ public sealed class StrategySearch
             {
                 holdings.Clear();
                 var infoT = t - 1;
-                var selected = p.Kind switch
+
+                if (!IsRiskOn(p, infoT))
                 {
-                    ResearchStrategyKind.Momentum => SelectMomentum(p, infoT, lb, volLb, ma),
-                    ResearchStrategyKind.LowVol => SelectLowVol(p, infoT, volLb),
-                    ResearchStrategyKind.Trend => SelectTrend(p, infoT, ma),
-                    ResearchStrategyKind.MeanReversion => SelectMeanReversion(p, infoT, lb),
-                    _ => Array.Empty<int>()
-                };
-                holdings.AddRange(selected);
+                    // CASH
+                }
+                else
+                {
+                    var selected = p.Kind switch
+                    {
+                        ResearchStrategyKind.Momentum => SelectMomentum(p, infoT, lb, volLb, ma),
+                        ResearchStrategyKind.LowVol => SelectLowVol(p, infoT, volLb),
+                        ResearchStrategyKind.Trend => SelectTrend(p, infoT, ma),
+                        ResearchStrategyKind.MeanReversion => SelectMeanReversion(p, infoT, lb),
+                        _ => Array.Empty<int>()
+                    };
+                    holdings.AddRange(selected);
+                }
             }
 
             var r = 0.0;
@@ -132,8 +146,47 @@ public sealed class StrategySearch
         var years = months / 12.0;
         var cagr = years > 0 ? Math.Pow(equity, 1.0 / years) - 1.0 : double.NaN;
 
-        // Score = Sharpe (since MDD is a hard constraint)
-        return new TrialResult(p, sharpe, cagr, mdd, sharpe);
+        // Score = Sharpe penalized by drawdown (soft constraint)
+        var score = sharpe - p.MaxDrawdownPenaltyLambda * Math.Abs(mdd);
+        return new TrialResult(p, sharpe, cagr, mdd, score);
+    }
+
+    private bool IsRiskOn(TrialParams p, int infoT)
+    {
+        if (p.Regime == RegimeKind.None)
+            return true;
+
+        if (p.Regime == RegimeKind.IndexTrend)
+        {
+            var ma = Math.Max(2, p.RegimeMaMonths);
+            if (infoT - ma < 0) return false;
+
+            var now = _m.IndexNav[infoT];
+            if (double.IsNaN(now)) return false;
+
+            var sum = 0.0;
+            var n = 0;
+            for (var i = infoT - ma; i <= infoT; i++)
+            {
+                var v = _m.IndexNav[i];
+                if (double.IsNaN(v)) continue;
+                sum += v;
+                n++;
+            }
+
+            if (n < ma / 2) return false;
+            var maVal = sum / n;
+            return now > maVal;
+        }
+
+        if (p.Regime == RegimeKind.Breadth)
+        {
+            var b = _m.Breadth12[infoT];
+            if (double.IsNaN(b)) return false;
+            return b >= p.RegimeBreadthThreshold;
+        }
+
+        return true;
     }
 
     private int[] SelectMomentum(TrialParams p, int infoT, int lb, int volLb, int ma)

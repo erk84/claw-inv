@@ -17,6 +17,11 @@ public sealed record TrialParams(
     // trend knobs
     int TrendMaMonths,
 
-    // constraint
-    double MaxDrawdownFloor
+    // Regime filter
+    RegimeKind Regime,
+    int RegimeMaMonths,
+    double RegimeBreadthThreshold,
+
+    // scoring
+    double MaxDrawdownPenaltyLambda
 );
