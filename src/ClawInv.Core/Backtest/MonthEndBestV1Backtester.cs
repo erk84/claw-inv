@@ -19,15 +19,14 @@ public static class MonthEndBestV1Backtester
         var search = new StrategySearch(matrices);
 
         var p = new TrialParams(
+            Kind: ResearchStrategyKind.Momentum,
             LookbackMonths: strat.LookbackMonths,
             RebalanceMonths: strat.RebalanceEveryMonths,
             TopK: strat.TopK,
             UseAbsoluteMomentum: strat.UseAbsoluteMomentumFilter,
-            VolLookbackMonths: strat.VolatilityLookbackMonths,
-            UseLowVolFilter: strat.UseLowVolFilter,
-            TrendMaMonths: strat.MovingAverageMonths,
-            UseTrendFilter: strat.MovingAverageMonths > 0,
-            ScoreMddPenalty: 0.0
+            VolLookbackMonths: Math.Max(2, strat.VolatilityLookbackMonths),
+            TrendMaMonths: Math.Max(1, strat.MovingAverageMonths),
+            MaxDrawdownFloor: -1.0
         );
 
         var r = search.Evaluate(p);

@@ -355,7 +355,7 @@ sealed class SearchBestCommand : AsyncCommand<SearchBestCommand.Settings>
 
             if (i % 10_000 == 0 && best is not null)
             {
-                AnsiConsole.MarkupLine($"T={i:N0}: best score={best.Score:0.000} sharpe={best.Sharpe:0.##} cagr={best.Cagr:P2} mdd={best.MaxDrawdown:P2} lookback={best.Params.LookbackMonths} reb={best.Params.RebalanceMonths} topK={best.Params.TopK} abs={best.Params.UseAbsoluteMomentum} trend={best.Params.UseTrendFilter} ma={best.Params.TrendMaMonths} lowvol={best.Params.UseLowVolFilter} volLb={best.Params.VolLookbackMonths} pen={best.Params.ScoreMddPenalty:0.##}" );
+                AnsiConsole.MarkupLine($"T={i:N0}: best score={best.Score:0.000} sharpe={best.Sharpe:0.##} cagr={best.Cagr:P2} mdd={best.MaxDrawdown:P2} kind={best.Params.Kind} lookback={best.Params.LookbackMonths} reb={best.Params.RebalanceMonths} topK={best.Params.TopK} abs={best.Params.UseAbsoluteMomentum} ma={best.Params.TrendMaMonths} volLb={best.Params.VolLookbackMonths} mddFloor={best.Params.MaxDrawdownFloor:P0}" );
             }
         }
 
