@@ -19,6 +19,9 @@ TestResults/
 # Generated strategies
 strategies/top/
 
+# CLI outputs / reports / caches
+out/
+
 # Local universe
 data/universe.json
 data/universe.generated.json

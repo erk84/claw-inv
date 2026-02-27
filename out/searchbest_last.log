@@ -1,1 +1,0 @@
-/home/azureuser/.openclaw/workspace/claw-inv/src/ClawInv.Core/Backtest/MonthEndBestV1Backtester.cs(27,13): error CS1739: The best overload for 'TrialParams' does not have a parameter named 'UseLowVolFilter' [/home/azureuser/.openclaw/workspace/claw-inv/src/ClawInv.Core/ClawInv.Core.csproj]
