@@ -326,6 +326,12 @@ sealed class SearchBestCommand : AsyncCommand<SearchBestCommand.Settings>
 
         [CommandOption("--out <PATH>")]
         public string OutPath { get; init; } = "out/best_strategy.json";
+
+        [CommandOption("--objective <OBJ>")]
+        public string Objective { get; init; } = "Sharpe"; // Sharpe|Cagr|Final
+
+        [CommandOption("--start-capital <N>")]
+        public decimal StartCapital { get; init; } = 100000m;
     }
 
     public override async Task<int> ExecuteAsync(CommandContext context, Settings settings)
@@ -350,6 +356,28 @@ sealed class SearchBestCommand : AsyncCommand<SearchBestCommand.Settings>
         var search = new ClawInv.Core.Research.StrategySearch(matrices);
 
         var rnd = new Random(123);
+
+        var obj = settings.Objective?.Trim().ToLowerInvariant() ?? "sharpe";
+        if (obj is not ("sharpe" or "cagr" or "final"))
+            throw new ArgumentException("Unknown --objective. Use: Sharpe|Cagr|Final");
+
+        double ObjectiveScore(ClawInv.Core.Research.TrialResult r)
+        {
+            return obj switch
+            {
+                "cagr" => r.Cagr,
+                // Maximize final capital over the backtest horizon.
+                // Use log final multiple as score to keep numbers stable and monotonic.
+                "final" => settings.Years * Math.Log(1.0 + r.Cagr),
+                _ => r.Score
+            };
+        }
+
+        decimal FinalCapital(ClawInv.Core.Research.TrialResult r)
+        {
+            var mult = Math.Pow(1.0 + r.Cagr, settings.Years);
+            return settings.StartCapital * (decimal)mult;
+        }
 
         ClawInv.Core.Research.ResearchStrategyKind? fixedKind = null;
         if (!string.IsNullOrWhiteSpace(settings.Kind))
@@ -391,22 +419,24 @@ sealed class SearchBestCommand : AsyncCommand<SearchBestCommand.Settings>
         {
             var p0 = Sample(rnd);
             var p = fixedKind is null ? p0 : p0 with { Kind = fixedKind.Value };
-            var r = search.Evaluate(p);
+            var r0 = search.Evaluate(p);
 
-            if (double.IsNaN(r.Score))
+            if (double.IsNaN(r0.Score) || double.IsNaN(r0.Cagr))
                 continue;
+
+            var r = r0 with { Score = ObjectiveScore(r0) };
 
             if (bestMonthEnd is null || r.Score > bestMonthEnd.Score)
                 bestMonthEnd = r;
             if (!bestByRegime.TryGetValue(r.Params.Regime, out var cur) || r.Score > cur.Score)
                 bestByRegime[r.Params.Regime] = r;
 
-
             Consider(r);
 
             if (i % 10_000 == 0 && bestMonthEnd is not null)
             {
-                AnsiConsole.MarkupLine($"T={i:N0}: best(month-end) score={bestMonthEnd.Score:0.000} sharpe={bestMonthEnd.Sharpe:0.##} cagr={bestMonthEnd.Cagr:P2} mdd={bestMonthEnd.MaxDrawdown:P2} kind={bestMonthEnd.Params.Kind} lookback={bestMonthEnd.Params.LookbackMonths} reb={bestMonthEnd.Params.RebalanceMonths} topK={bestMonthEnd.Params.TopK} abs={bestMonthEnd.Params.UseAbsoluteMomentum} ma={bestMonthEnd.Params.TrendMaMonths} volLb={bestMonthEnd.Params.VolLookbackMonths} regime={bestMonthEnd.Params.Regime} regMA={bestMonthEnd.Params.RegimeMaMonths} breadthTh={bestMonthEnd.Params.RegimeBreadthThreshold:0.##} ddLambda={bestMonthEnd.Params.MaxDrawdownPenaltyLambda:0.##}" );
+                var final = FinalCapital(bestMonthEnd);
+                AnsiConsole.MarkupLine($"T={i:N0}: best(month-end) obj={settings.Objective} score={bestMonthEnd.Score:0.000} final={final:N0} sharpe={bestMonthEnd.Sharpe:0.##} cagr={bestMonthEnd.Cagr:P2} mdd={bestMonthEnd.MaxDrawdown:P2} kind={bestMonthEnd.Params.Kind} lookback={bestMonthEnd.Params.LookbackMonths} reb={bestMonthEnd.Params.RebalanceMonths} topK={bestMonthEnd.Params.TopK} abs={bestMonthEnd.Params.UseAbsoluteMomentum} ma={bestMonthEnd.Params.TrendMaMonths} volLb={bestMonthEnd.Params.VolLookbackMonths} regime={bestMonthEnd.Params.Regime} regMA={bestMonthEnd.Params.RegimeMaMonths} breadthTh={bestMonthEnd.Params.RegimeBreadthThreshold:0.##} ddLambda={bestMonthEnd.Params.MaxDrawdownPenaltyLambda:0.##}" );
             }
         }
 
