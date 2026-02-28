@@ -364,6 +364,9 @@ sealed class SearchBestCommand : AsyncCommand<SearchBestCommand.Settings>
 
         const int KeepTop = 200;
         var top = new List<ClawInv.Core.Research.TrialResult>(capacity: KeepTop + 50);
+        // Track best per regime (so gating variants are visible even if they do not win overall).
+        var bestByRegime = new Dictionary<ClawInv.Core.Research.RegimeKind, ClawInv.Core.Research.TrialResult>();
+
 
         void Consider(ClawInv.Core.Research.TrialResult r)
         {
@@ -395,6 +398,9 @@ sealed class SearchBestCommand : AsyncCommand<SearchBestCommand.Settings>
 
             if (bestMonthEnd is null || r.Score > bestMonthEnd.Score)
                 bestMonthEnd = r;
+            if (!bestByRegime.TryGetValue(r.Params.Regime, out var cur) || r.Score > cur.Score)
+                bestByRegime[r.Params.Regime] = r;
+
 
             Consider(r);
 
@@ -408,6 +414,15 @@ sealed class SearchBestCommand : AsyncCommand<SearchBestCommand.Settings>
         {
             AnsiConsole.MarkupLine("No valid trials.");
             return 1;
+        }
+
+        if (bestByRegime.Count > 0)
+        {
+            foreach (var kv in bestByRegime.OrderBy(k => k.Key.ToString()))
+            {
+                var r = kv.Value;
+                AnsiConsole.WriteLine($"Best[{kv.Key}] score={r.Score:0.000} sharpe={r.Sharpe:0.##} cagr={r.Cagr:P2} mdd={r.MaxDrawdown:P2} kind={r.Params.Kind}");
+            }
         }
 
         // Choose best candidate after DAILY validation under the same MDD floor.
