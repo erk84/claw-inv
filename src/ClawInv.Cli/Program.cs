@@ -332,6 +332,9 @@ sealed class SearchBestCommand : AsyncCommand<SearchBestCommand.Settings>
 
         [CommandOption("--start-capital <N>")]
         public decimal StartCapital { get; init; } = 100000m;
+
+        [CommandOption("--seed <N>")]
+        public int Seed { get; init; } = 123;
     }
 
     public override async Task<int> ExecuteAsync(CommandContext context, Settings settings)
@@ -355,7 +358,7 @@ sealed class SearchBestCommand : AsyncCommand<SearchBestCommand.Settings>
         var matrices = ClawInv.Core.Research.FeatureBuilder.BuildMonthEndMatrices(nav);
         var search = new ClawInv.Core.Research.StrategySearch(matrices);
 
-        var rnd = new Random(123);
+        var rnd = new Random(settings.Seed);
 
         var obj = settings.Objective?.Trim().ToLowerInvariant() ?? "sharpe";
         if (obj is not ("sharpe" or "cagr" or "final"))
