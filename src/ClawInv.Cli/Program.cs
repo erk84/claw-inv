@@ -555,12 +555,18 @@ sealed class SearchBestCommand : AsyncCommand<SearchBestCommand.Settings>
                 : 0);
 
         // Regime filter (soft): None / IndexTrend / Breadth / Index RSI
+        // For MinVariance2 we want to actively test regime gating + defensive mode.
         var rr = rnd.NextDouble();
-        var regime = rr < 0.20
-            ? ClawInv.Core.Research.RegimeKind.None
-            : rr < 0.45 ? ClawInv.Core.Research.RegimeKind.Breadth
-            : rr < 0.70 ? ClawInv.Core.Research.RegimeKind.IndexTrend
-            : ClawInv.Core.Research.RegimeKind.IndexRsi;
+        var regime = kind == ClawInv.Core.Research.ResearchStrategyKind.MinVariance2
+            ? (rr < 0.10
+                ? ClawInv.Core.Research.RegimeKind.None
+                : rr < 0.55 ? ClawInv.Core.Research.RegimeKind.Breadth
+                : ClawInv.Core.Research.RegimeKind.IndexTrend)
+            : (rr < 0.20
+                ? ClawInv.Core.Research.RegimeKind.None
+                : rr < 0.45 ? ClawInv.Core.Research.RegimeKind.Breadth
+                : rr < 0.70 ? ClawInv.Core.Research.RegimeKind.IndexTrend
+                : ClawInv.Core.Research.RegimeKind.IndexRsi);
 
         var regimeMa = regime == ClawInv.Core.Research.RegimeKind.IndexTrend
             ? Pick(6, 9, 12, 18)
@@ -574,11 +580,17 @@ sealed class SearchBestCommand : AsyncCommand<SearchBestCommand.Settings>
             _ => 0.0
         };
 
-        var riskOffMode = (regime != ClawInv.Core.Research.RegimeKind.None && Flip(0.50))
-            ? ClawInv.Core.Strategies.RiskOffMode.DefensiveFund
-            : ClawInv.Core.Strategies.RiskOffMode.Cash;
+        var riskOffMode = kind == ClawInv.Core.Research.ResearchStrategyKind.MinVariance2
+            ? (regime != ClawInv.Core.Research.RegimeKind.None && Flip(0.85)
+                ? ClawInv.Core.Strategies.RiskOffMode.DefensiveFund
+                : ClawInv.Core.Strategies.RiskOffMode.Cash)
+            : (regime != ClawInv.Core.Research.RegimeKind.None && Flip(0.50)
+                ? ClawInv.Core.Strategies.RiskOffMode.DefensiveFund
+                : ClawInv.Core.Strategies.RiskOffMode.Cash);
 
-        var defVolLb = Pick(3, 6, 12);
+        var defVolLb = kind == ClawInv.Core.Research.ResearchStrategyKind.MinVariance2
+            ? Pick(3, 6, 12)
+            : 3;
 
         // DD penalty strength (can be 0 now that we're not enforcing an MDD floor)
         var lambda = Pick(0, 0, 0, 25, 50, 100) / 100.0;
