@@ -36,8 +36,10 @@ public static class TraceBest
         var bestJson = File.ReadAllText(bestJsonPath);
 
         // Detect legacy schema (research v1)
+        // NOTE: New TrialParams now includes UseLowVolFilter, so we must not use that as legacy detector.
         using var doc = JsonDocument.Parse(bestJson);
-        if (doc.RootElement.TryGetProperty("Params", out var pEl) && pEl.TryGetProperty("UseLowVolFilter", out _))
+        if (doc.RootElement.TryGetProperty("Params", out var pEl) &&
+            (pEl.TryGetProperty("UseTrendFilter", out _) || pEl.TryGetProperty("ScoreMddPenalty", out _)))
         {
             var legacy = JsonSerializer.Deserialize<LegacyTrialResult>(bestJson, jsonOpts);
             if (legacy is null) throw new ArgumentException($"Could not read legacy best json: {bestJsonPath}");
