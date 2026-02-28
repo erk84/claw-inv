@@ -360,7 +360,7 @@ public sealed class StrategySearch
         // Choose 2-fund equal-weight portfolio with minimum variance using monthly returns.
         // To keep it fast, we only consider a small pool of low-vol candidates.
         var F = _m.FundIds.Length;
-        var volLb = Math.Max(6, lb);
+        var volLb = Math.Max(12, lb);
 
         var vols = new List<(int f, double v)>(F);
         for (var f = 0; f < F; f++)
@@ -372,7 +372,7 @@ public sealed class StrategySearch
         if (vols.Count == 0) return [];
         vols.Sort((a, b) => a.v.CompareTo(b.v));
 
-        var pool = vols.Take(Math.Min(20, vols.Count)).Select(x => x.f).ToArray();
+        var pool = vols.Take(Math.Min(40, vols.Count)).Select(x => x.f).ToArray();
         if (pool.Length == 1) return [pool[0]];
 
         (int a, int b)? best = null;
