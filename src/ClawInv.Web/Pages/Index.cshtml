@@ -149,10 +149,11 @@ else
     }
     </div>
 
-    <script src="/lib/chartjs/chart.umd.min.js"></script>
+    <script src="@Url.Content("~/lib/chartjs/chart.umd.min.js")"></script>
     <script>
     (function () {
         // Note: we intentionally load Chart.js from a local file to avoid CDN/CSP/network issues.
+        // Use Url.Content("~/...") so this works even when the app is hosted behind a path base/reverse proxy.
 
         const chartConfigs = {
             @for (var i = 0; i < Model.EnabledStrategies.Count; i++)
@@ -213,20 +214,27 @@ else
             });
         }
 
-        // Render first (active) tab chart immediately.
-        const firstTab = document.querySelector('.nav-tabs .nav-link.active');
-        if (firstTab) {
-            const id = (firstTab.getAttribute('id') || '').replace('tab-', '');
-            if (id) ensureChart(id);
+        function initCharts() {
+            // Render first (active) tab chart immediately.
+            const firstTab = document.querySelector('.nav-tabs .nav-link.active');
+            if (firstTab) {
+                const id = (firstTab.getAttribute('id') || '').replace('tab-', '');
+                if (id) ensureChart(id);
+            }
+
+            // Render on tab show.
+            document.querySelectorAll('button[data-bs-toggle="tab"]').forEach(btn => {
+                btn.addEventListener('shown.bs.tab', (ev) => {
+                    const id = (ev.target.getAttribute('id') || '').replace('tab-', '');
+                    if (id) ensureChart(id);
+                });
+            });
         }
 
-        // Render on tab show.
-        document.querySelectorAll('button[data-bs-toggle="tab"]').forEach(btn => {
-            btn.addEventListener('shown.bs.tab', (ev) => {
-                const id = (ev.target.getAttribute('id') || '').replace('tab-', '');
-                if (id) ensureChart(id);
-            });
-        });
+        if (document.readyState === 'loading')
+            document.addEventListener('DOMContentLoaded', initCharts);
+        else
+            initCharts();
     })();
     </script>
 }
