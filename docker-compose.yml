@@ -1,0 +1,13 @@
+services:
+  clawinv:
+    build:
+      context: .
+      dockerfile: src/ClawInv.Web/Dockerfile
+    ports:
+      - "8080:8080"
+    volumes:
+      - clawinv_data:/data
+    restart: unless-stopped
+
+volumes:
+  clawinv_data:
