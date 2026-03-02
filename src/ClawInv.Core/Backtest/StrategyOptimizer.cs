@@ -10,6 +10,10 @@ public sealed class StrategyOptimizer
     private readonly NavDataStore _navStore;
     private readonly TimeZoneInfo _tz;
 
+    // Avanza chart API returns % development since the FIRST datapoint in the requested range.
+    // To make series comparable across runs (and between buy/sell lookups), we must use a stable anchor.
+    private static readonly DateOnly StableNavFrom = new(2021, 1, 1);
+
     public StrategyOptimizer(AvanzaClient avanza, NavDataStore navStore, TimeZoneInfo tz)
     {
         _avanza = avanza;
@@ -25,6 +29,11 @@ public sealed class StrategyOptimizer
     {
         var list = new List<NavSeries>();
 
+        // Always fetch using a stable anchor so Avanza's "% since start" is comparable between runs.
+        var stableFrom = StableNavFrom;
+        if (from < stableFrom)
+            stableFrom = from;
+
         foreach (var f in universe.Funds)
         {
             if (_navStore.TryRead(f.OrderbookId, out var cached) && cached.Count > 0)
@@ -32,42 +41,19 @@ public sealed class StrategyOptimizer
                 var cachedFrom = cached[0].Date;
                 var cachedTo = cached[^1].Date;
 
-                // If cache fully covers requested range, use it.
-                if (cachedFrom <= from && cachedTo >= to)
+                // Cache is valid only if it starts at (or before) our stable anchor and covers the requested 'to'.
+                if (cachedFrom <= stableFrom && cachedTo >= to)
                 {
                     list.Add(new NavSeries(f.Name, f.OrderbookId, cached));
                     continue;
                 }
-
-                // Otherwise fetch a window that overlaps the cached data so NavDataStore can rescale+merge.
-                var overlapDays = 45;
-                var fetchFrom = from;
-                var fetchTo = to;
-
-                if (to > cachedTo)
-                    fetchFrom = cachedTo.AddDays(-overlapDays);
-
-                if (from < cachedFrom)
-                    fetchTo = cachedFrom.AddDays(overlapDays);
-
-                // Clamp
-                if (fetchFrom < from) fetchFrom = from;
-                if (fetchTo > to) fetchTo = to;
-
-                var chart = await _avanza.GetFundChartAsync(f.OrderbookId, fetchFrom, fetchTo, ct);
-                var nav = AvanzaChartConverter.ToNormalizedNav(chart, _tz);
-                _navStore.Write(f.OrderbookId, nav);
-
-                // Read back merged series for use.
-                _navStore.TryRead(f.OrderbookId, out var merged);
-                list.Add(new NavSeries(f.Name, f.OrderbookId, merged ?? nav));
-                continue;
             }
 
-            var chart2 = await _avanza.GetFundChartAsync(f.OrderbookId, from, to, ct);
-            var nav2 = AvanzaChartConverter.ToNormalizedNav(chart2, _tz);
-            _navStore.Write(f.OrderbookId, nav2);
-            list.Add(new NavSeries(f.Name, f.OrderbookId, nav2));
+            // Re-fetch full series from stableFrom..to and overwrite cache to keep a consistent normalization anchor.
+            var chart = await _avanza.GetFundChartAsync(f.OrderbookId, stableFrom, to, ct);
+            var nav = AvanzaChartConverter.ToNormalizedNav(chart, _tz);
+            _navStore.Write(f.OrderbookId, nav);
+            list.Add(new NavSeries(f.Name, f.OrderbookId, nav));
         }
 
         return list;

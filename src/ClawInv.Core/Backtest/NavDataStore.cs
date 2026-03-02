@@ -37,59 +37,9 @@ public sealed class NavDataStore
     {
         var path = SeriesPath(orderbookId);
 
-        // Merge with existing data so repeated partial-window downloads do not truncate history.
-        // This is important for long-running web usage where we frequently load rolling windows.
-        List<NavPoint>? existing = null;
-        if (File.Exists(path))
-        {
-            try
-            {
-                existing = JsonSerializer.Deserialize<List<NavPoint>>(File.ReadAllText(path),
-                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-            }
-            catch
-            {
-                existing = null;
-            }
-        }
-
-        if (existing is { Count: > 0 })
-        {
-            // Existing series is already normalized to its own start.
-            // Newly fetched series is ALSO normalized to its (window) start.
-            // To safely merge rolling windows, rescale the new window using an overlap point.
-
-            var existingMap = existing
-                .GroupBy(p => p.Date)
-                .ToDictionary(g => g.Key, g => g.Last().Nav);
-
-            // Find an overlap date to compute scale. Prefer the latest overlap to reduce drift.
-            decimal scale = 1m;
-            var overlap = nav
-                .Select(p => p.Date)
-                .Where(d => existingMap.ContainsKey(d))
-                .OrderByDescending(d => d)
-                .FirstOrDefault();
-
-            if (overlap != default)
-            {
-                var existingNav = existingMap[overlap];
-                var newNav = nav.First(p => p.Date == overlap).Nav;
-                if (newNav != 0m)
-                    scale = existingNav / newNav;
-            }
-
-            var merged = new Dictionary<DateOnly, decimal>();
-            foreach (var (d, v) in existingMap)
-                merged[d] = v;
-            foreach (var p in nav)
-                merged[p.Date] = p.Nav * scale;
-
-            nav = merged
-                .OrderBy(kv => kv.Key)
-                .Select(kv => new NavPoint(kv.Key, kv.Value))
-                .ToList();
-        }
+        // NOTE: Avanza chart data is returned as "% development since the FIRST datapoint in the requested range".
+        // Therefore, callers must fetch using a stable anchor 'from' date for series to be comparable across runs.
+        // We intentionally overwrite the cache file to avoid mixing differently-anchored normalizations.
 
         var json = JsonSerializer.Serialize(nav);
         File.WriteAllText(path, json);
