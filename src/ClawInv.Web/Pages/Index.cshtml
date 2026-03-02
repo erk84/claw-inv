@@ -152,46 +152,78 @@ else
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <script>
     (function () {
-        const charts = [];
-        @for (var i = 0; i < Model.EnabledStrategies.Count; i++)
-        {
-            var s = Model.EnabledStrategies[i];
-            var snaps = Model.SnapshotsByStrategyId.GetValueOrDefault(s.Id) ?? new();
-            if (snaps.Count == 0) { continue; }
+        // Bootstrap tabs hide canvases; Chart.js often renders blank in hidden tabs.
+        // Create charts lazily when a tab is shown.
 
-            <text>
+        const chartConfigs = {
+            @for (var i = 0; i < Model.EnabledStrategies.Count; i++)
             {
-                const ctx = document.getElementById('chart-@s.Id');
-                if (!ctx) return;
-
-                const labels = [@string.Join(",", snaps.Select(x => $"'{x.Date:yyyy-MM-dd}'"))];
-                const data = [@string.Join(",", snaps.Select(x => x.PerfPct.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture)))];
-
-                charts.push(new Chart(ctx, {
-                    type: 'line',
-                    data: {
-                        labels: labels,
-                        datasets: [{
-                            label: '@s.DisplayName',
-                            data: data,
-                            borderWidth: 1,
-                            pointRadius: 0,
-                            tension: 0.05
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: { legend: { display: false } },
-                        scales: {
-                            x: { ticks: { maxTicksLimit: 6 } },
-                            y: { ticks: { callback: (v) => v + '%' } }
-                        }
-                    }
-                }));
+                var s = Model.EnabledStrategies[i];
+                var snaps = Model.SnapshotsByStrategyId.GetValueOrDefault(s.Id) ?? new();
+                if (snaps.Count == 0) { continue; }
+                <text>
+                '@s.Id': {
+                    label: '@s.DisplayName',
+                    labels: [@string.Join(",", snaps.Select(x => $"'{x.Date:yyyy-MM-dd}'"))],
+                    data: [@string.Join(",", snaps.Select(x => x.PerfPct.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture)))]
+                },
+                </text>
             }
-            </text>
+        };
+
+        const chartsById = {};
+
+        function ensureChart(strategyId) {
+            if (chartsById[strategyId]) return;
+            const cfg = chartConfigs[strategyId];
+            if (!cfg) return;
+
+            if (!window.Chart) {
+                console.warn('Chart.js not loaded');
+                return;
+            }
+
+            const canvas = document.getElementById('chart-' + strategyId);
+            if (!canvas) return;
+
+            chartsById[strategyId] = new Chart(canvas, {
+                type: 'line',
+                data: {
+                    labels: cfg.labels,
+                    datasets: [{
+                        label: cfg.label,
+                        data: cfg.data,
+                        borderWidth: 1,
+                        pointRadius: 0,
+                        tension: 0.05
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: { ticks: { maxTicksLimit: 6 } },
+                        y: { ticks: { callback: (v) => v + '%' } }
+                    }
+                }
+            });
         }
+
+        // Render first (active) tab chart immediately.
+        const firstTab = document.querySelector('.nav-tabs .nav-link.active');
+        if (firstTab) {
+            const id = (firstTab.getAttribute('id') || '').replace('tab-', '');
+            if (id) ensureChart(id);
+        }
+
+        // Render on tab show.
+        document.querySelectorAll('button[data-bs-toggle="tab"]').forEach(btn => {
+            btn.addEventListener('shown.bs.tab', (ev) => {
+                const id = (ev.target.getAttribute('id') || '').replace('tab-', '');
+                if (id) ensureChart(id);
+            });
+        });
     })();
     </script>
 }
