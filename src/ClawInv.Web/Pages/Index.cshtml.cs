@@ -88,7 +88,8 @@ public sealed class IndexModel(AppDbContext db, NavLookupService nav) : PageMode
             ActiveHoldingsByStrategyId[s.Id] = active
                 .Select(h =>
                 {
-                    var latestNav = nav.TryGetNavAtOrBefore(h.FundId, asOf);
+                    // For "current" performance, use latest NAV in store (not as-of yesterday).
+                    var latestNav = nav.TryGetLatestNav(h.FundId);
 
                     // Some historical rows may have BuyNav=0 (older data). Fallback to nav lookup at buy date.
                     var buyNav = h.BuyNav > 0m ? h.BuyNav : (nav.TryGetNavAtOrBefore(h.FundId, h.BuyDate) ?? 0m);
@@ -141,7 +142,7 @@ public sealed class IndexModel(AppDbContext db, NavLookupService nav) : PageMode
                         }
                         else
                         {
-                            var latestNav = nav.TryGetNavAtOrBefore(h.FundId, asOf);
+                            var latestNav = nav.TryGetLatestNav(h.FundId);
                             if (latestNav.HasValue && latestNav.Value > 0m)
                                 perf = (latestNav.Value / buyNav - 1m) * 100m;
                         }
