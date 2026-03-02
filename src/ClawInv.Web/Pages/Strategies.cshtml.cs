@@ -1,11 +1,12 @@
 using ClawInv.Web.Data;
+using ClawInv.Web.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.EntityFrameworkCore;
 
 namespace ClawInv.Web.Pages;
 
-public sealed class StrategiesModel(AppDbContext db) : PageModel
+public sealed class StrategiesModel(AppDbContext db, BootstrapEngine bootstrap) : PageModel
 {
     [BindProperty]
     public List<Item> Items { get; set; } = new();
@@ -54,12 +55,19 @@ public sealed class StrategiesModel(AppDbContext db) : PageModel
         var ids = Items.Select(x => x.Id).ToHashSet();
         var rows = await db.StrategyConfigs.Where(x => ids.Contains(x.Id)).ToListAsync(ct);
 
+        var newlyEnabled = new List<int>();
+
         foreach (var row in rows)
         {
             var i = Items.Single(x => x.Id == row.Id);
+
+            var wasEnabled = row.Enabled;
             row.Enabled = i.Enabled;
             row.DisplayName = i.DisplayName;
-            row.Slots = Math.Clamp(i.Slots, 1, 10);
+            row.Slots = Math.Clamp(i.Slots, 1, 50);
+
+            if (!wasEnabled && row.Enabled)
+                newlyEnabled.Add(row.Id);
 
             // Soft-change: mark pending when settings changed.
             // (We'll use this later in the rebalance recommendation logic.)
@@ -67,6 +75,15 @@ public sealed class StrategiesModel(AppDbContext db) : PageModel
         }
 
         await db.SaveChangesAsync(ct);
+
+        // Bootstrap any newly enabled strategies (non-destructive: only if empty)
+        if (newlyEnabled.Count > 0)
+        {
+            var asOf = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-1));
+            foreach (var id in newlyEnabled)
+                await bootstrap.BootstrapLast5YearsIfEmptyAsync(id, asOf, ct);
+        }
+
         return RedirectToPage();
     }
 }

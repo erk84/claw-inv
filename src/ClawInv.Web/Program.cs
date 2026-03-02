@@ -19,6 +19,7 @@ builder.Services.AddSingleton<UniverseRegenerator>();
 builder.Services.AddSingleton<NavService>();
 builder.Services.AddSingleton<NavLookupService>();
 builder.Services.AddScoped<SnapshotEngine>();
+builder.Services.AddScoped<BootstrapEngine>();
 builder.Services.AddScoped<RecommendationEngine>();
 builder.Services.AddHostedService<ScheduledJobsService>();
 
