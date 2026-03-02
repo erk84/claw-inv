@@ -8,6 +8,7 @@ public enum StrategyType
     LowVolatilitySelection,
     MeanReversionRotation,
     MinVariance2,
+    CorrFilteredTopK,
     EqualWeightBuyAndHold,
     BestStrategyV1MonthEnd
 }

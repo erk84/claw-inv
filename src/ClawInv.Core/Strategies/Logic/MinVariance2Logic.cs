@@ -12,45 +12,72 @@ internal sealed class MinVariance2Logic : IStrategyLogic
         IReadOnlyDictionary<string, NavPoint[]> fundIndex,
         DateOnly asOf)
     {
-        // Keep behavior: choose pair with minimum variance based on 1M returns over lookback window.
-        // NOTE: This remains a "2" strategy for now; generalized K will be implemented next.
-        if (strat.TopK != 2)
-            throw new ArgumentException("MinVariance2 requires TopK=2 (for now)");
-
+        // Generalized min-variance (equal-weight) selection for K holdings.
+        // This keeps the old behavior for K=2 but supports any K>=1.
+        var k = Math.Max(1, strat.TopK);
         var lb = Math.Max(12, strat.VolatilityLookbackMonths);
 
-        // Candidate pool: low-vol funds first (simple approx)
+        // Candidate pool: low-vol funds first (simple approx) for speed.
+        // Make sure pool >= k.
+        var poolSize = Math.Max(40, k * 10);
         var candidates = series
             .Select(s => (s.OrderbookId, vol: VolApprox(fundIndex, s.OrderbookId, asOf, lb)))
             .Where(x => !double.IsNaN(x.vol))
             .OrderBy(x => x.vol)
-            .Take(40)
+            .Take(poolSize)
             .Select(x => x.OrderbookId)
             .ToArray();
 
-        if (candidates.Length < 2)
+        if (candidates.Length == 0)
             return new Dictionary<string, decimal>();
 
-        (string a, string b, double v) best = ("", "", double.PositiveInfinity);
+        if (k == 1)
+            return new Dictionary<string, decimal> { [candidates[0]] = 1.0m };
 
-        for (var i = 0; i < candidates.Length; i++)
+        // Precompute aligned monthly return vectors for candidates.
+        var ret = candidates
+            .Select(id => (id, r: MonthlyReturns(fundIndex, id, asOf, lb).ToArray()))
+            .Where(x => x.r.Length >= 6)
+            .ToDictionary(x => x.id, x => x.r);
+
+        var usable = candidates.Where(ret.ContainsKey).ToArray();
+        if (usable.Length < k)
+            return new Dictionary<string, decimal>();
+
+        // Start with lowest vol fund.
+        var selected = new List<string> { usable[0] };
+
+        // Greedy add: choose fund that minimizes equal-weight portfolio variance.
+        while (selected.Count < k)
         {
-            for (var j = i + 1; j < candidates.Length; j++)
+            string bestId = "";
+            double bestVar = double.PositiveInfinity;
+
+            foreach (var id in usable)
             {
-                var v = PairVariance(fundIndex, candidates[i], candidates[j], asOf, lb);
+                if (selected.Contains(id)) continue;
+
+                var trial = selected.Concat([id]).ToArray();
+                var v = PortfolioVarianceEqualWeight(ret, trial);
                 if (double.IsNaN(v)) continue;
-                if (v < best.v) best = (candidates[i], candidates[j], v);
+                if (v < bestVar)
+                {
+                    bestVar = v;
+                    bestId = id;
+                }
             }
+
+            if (string.IsNullOrEmpty(bestId))
+                break;
+
+            selected.Add(bestId);
         }
 
-        if (double.IsInfinity(best.v))
+        if (selected.Count == 0)
             return new Dictionary<string, decimal>();
 
-        return new Dictionary<string, decimal>
-        {
-            [best.a] = 0.5m,
-            [best.b] = 0.5m
-        };
+        var w = 1.0m / selected.Count;
+        return selected.ToDictionary(x => x, _ => w);
     }
 
     private static double VolApprox(IReadOnlyDictionary<string, NavPoint[]> fundIndex, string id, DateOnly asOf, int months)
@@ -70,22 +97,29 @@ internal sealed class MinVariance2Logic : IStrategyLogic
         return Math.Sqrt(variance) * Math.Sqrt(12.0);
     }
 
-    private static double PairVariance(IReadOnlyDictionary<string, NavPoint[]> fundIndex, string a, string b, DateOnly asOf, int months)
+    private static double PortfolioVarianceEqualWeight(IReadOnlyDictionary<string, double[]> ret, string[] ids)
     {
-        var ra = MonthlyReturns(fundIndex, a, asOf, months);
-        var rb = MonthlyReturns(fundIndex, b, asOf, months);
-        if (ra.Count < 2 || rb.Count < 2) return double.NaN;
+        if (ids.Length < 1) return double.NaN;
+        if (ids.Length == 1) return Variance(ret[ids[0]]);
 
-        var n = Math.Min(ra.Count, rb.Count);
-        var xa = ra.Take(n).ToArray();
-        var xb = rb.Take(n).ToArray();
+        // Align by taking min length across vectors.
+        var n = ids.Select(id => ret[id].Length).Min();
+        if (n < 2) return double.NaN;
 
-        var va = Variance(xa);
-        var vb = Variance(xb);
-        var cov = Covariance(xa, xb);
+        var k = ids.Length;
+        var w = 1.0 / k;
 
-        // equal weight portfolio variance
-        return 0.25 * va + 0.25 * vb + 0.5 * cov;
+        // Compute portfolio return series as equal-weight sum.
+        var pr = new double[n];
+        for (var t = 0; t < n; t++)
+        {
+            var sum = 0.0;
+            for (var i = 0; i < k; i++)
+                sum += ret[ids[i]][t];
+            pr[t] = w * sum;
+        }
+
+        return Variance(pr);
     }
 
     private static List<double> MonthlyReturns(IReadOnlyDictionary<string, NavPoint[]> fundIndex, string id, DateOnly asOf, int months)

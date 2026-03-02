@@ -10,6 +10,7 @@ public static class StrategyLogicRegistry
             new LowVolLogic(),
             new MeanReversionLogic(),
             new MinVariance2Logic(),
+            new CorrFilteredTopKLogic(),
         }.ToDictionary(x => x.Type, x => x);
 
     public static IStrategyLogic Get(StrategyType type)
