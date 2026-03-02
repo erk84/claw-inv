@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace ClawInv.Web.Pages;
 
-public sealed class StrategiesModel(AppDbContext db, BootstrapEngine bootstrap) : PageModel
+public sealed class StrategiesModel(AppDbContext db, BackgroundTaskWorker tasks) : PageModel
 {
     [BindProperty]
     public List<Item> Items { get; set; } = new();
@@ -96,11 +96,12 @@ public sealed class StrategiesModel(AppDbContext db, BootstrapEngine bootstrap) 
         await db.SaveChangesAsync(ct);
 
         // Bootstrap any newly enabled strategies (non-destructive: only if empty)
+        // Done in background so the UI stays responsive (especially on a Raspberry Pi).
         if (newlyEnabled.Count > 0)
         {
             var asOf = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-1));
             foreach (var id in newlyEnabled)
-                await bootstrap.BootstrapLast5YearsIfEmptyAsync(id, asOf, ct);
+                await tasks.EnqueueBootstrapAsync(id, asOf, ct);
         }
 
         return RedirectToPage();

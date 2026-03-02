@@ -1,0 +1,83 @@
+@page
+@model ClawInv.Web.Pages.StatusModel
+@{
+    ViewData["Title"] = "Status";
+}
+
+<h1>Status</h1>
+
+<h5>Universe</h5>
+@if (Model.Universe is null)
+{
+    <p>Ingen UniverseSettings-rad hittades ännu.</p>
+}
+else
+{
+    <ul>
+        <li><strong>Key:</strong> @Model.Universe.Key</li>
+        <li><strong>Fund count:</strong> @Model.Universe.UniverseFundCount</li>
+        <li><strong>Last regenerated:</strong> @(Model.Universe.LastRegeneratedAtUtc?.ToString("u") ?? "-")</li>
+        <li><strong>Filters:</strong> rating&lt;=@Model.Universe.RatingLimit, fee&lt;=@Model.Universe.TotalFeeLimit, risk&lt;=@Model.Universe.RiskLimit</li>
+    </ul>
+}
+
+<hr />
+
+<h5>Strategier</h5>
+<table class="table table-sm">
+    <thead>
+        <tr>
+            <th>Aktiv</th>
+            <th>Namn</th>
+            <th>Senaste as-of</th>
+            <th>Senaste snapshot</th>
+        </tr>
+    </thead>
+    <tbody>
+    @foreach (var s in Model.Strategies)
+    {
+        <tr>
+            <td>@(s.Enabled ? "Ja" : "Nej")</td>
+            <td>@s.Name</td>
+            <td>@(s.LatestAsOf?.ToString() ?? "-")</td>
+            <td>@(s.LatestSnapshotDate?.ToString() ?? "-")</td>
+        </tr>
+    }
+    </tbody>
+</table>
+
+<hr />
+
+<h5>Bakgrundsjobb (senaste 50)</h5>
+<table class="table table-sm">
+    <thead>
+        <tr>
+            <th>Created</th>
+            <th>Type</th>
+            <th>Status</th>
+            <th>StrategyId</th>
+            <th>Message</th>
+        </tr>
+    </thead>
+    <tbody>
+    @foreach (var t in Model.RecentTasks)
+    {
+        <tr>
+            <td>@t.CreatedAtUtc.ToString("u")</td>
+            <td>@t.Type</td>
+            <td>@t.Status</td>
+            <td>@(t.StrategyConfigId?.ToString() ?? "-")</td>
+            <td>
+                <div>@t.Message</div>
+                @if (!string.IsNullOrWhiteSpace(t.Error))
+                {
+                    <details>
+                        <summary>error</summary>
+                        <pre style="white-space: pre-wrap;">@t.Error</pre>
+                    </details>
+                }
+            </td>
+        </tr>
+    }
+    </tbody>
+</table>

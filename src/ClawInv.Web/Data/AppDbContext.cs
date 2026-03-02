@@ -12,6 +12,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<TradeEvent> TradeEvents => Set<TradeEvent>();
     public DbSet<PortfolioDailySnapshot> PortfolioDailySnapshots => Set<PortfolioDailySnapshot>();
 
+    public DbSet<BackgroundTask> BackgroundTasks => Set<BackgroundTask>();
+
     public DbSet<RecommendationRun> RecommendationRuns => Set<RecommendationRun>();
     public DbSet<TradeRecommendation> TradeRecommendations => Set<TradeRecommendation>();
 
@@ -62,5 +64,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
 
         modelBuilder.Entity<RecommendationRun>()
             .HasIndex(r => new { r.StrategyConfigId, r.AsOfDate });
+
+        modelBuilder.Entity<BackgroundTask>()
+            .HasIndex(t => new { t.Type, t.Status, t.CreatedAtUtc });
     }
 }

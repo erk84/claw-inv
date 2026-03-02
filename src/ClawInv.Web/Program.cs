@@ -20,6 +20,10 @@ builder.Services.AddSingleton<NavService>();
 builder.Services.AddSingleton<NavLookupService>();
 builder.Services.AddScoped<SnapshotEngine>();
 builder.Services.AddScoped<BootstrapEngine>();
+
+builder.Services.AddSingleton<BackgroundTaskQueue>();
+builder.Services.AddSingleton<BackgroundTaskWorker>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<BackgroundTaskWorker>());
 builder.Services.AddScoped<RecommendationEngine>();
 builder.Services.AddHostedService<ScheduledJobsService>();
 

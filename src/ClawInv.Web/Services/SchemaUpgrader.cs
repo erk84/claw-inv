@@ -103,6 +103,24 @@ CREATE UNIQUE INDEX IF NOT EXISTS "IX_PortfolioDailySnapshots_PortfolioId_Date" 
 CREATE INDEX IF NOT EXISTS "IX_TradeEvents_PortfolioId_Date" ON "TradeEvents" ("PortfolioId", "Date");
 """);
 
+        EnsureTable(conn, createSql: """
+CREATE TABLE IF NOT EXISTS "BackgroundTasks" (
+    "Id" INTEGER NOT NULL CONSTRAINT "PK_BackgroundTasks" PRIMARY KEY AUTOINCREMENT,
+    "Type" INTEGER NOT NULL,
+    "Status" INTEGER NOT NULL,
+    "StrategyConfigId" INTEGER NULL,
+    "CreatedAtUtc" TEXT NOT NULL,
+    "StartedAtUtc" TEXT NULL,
+    "FinishedAtUtc" TEXT NULL,
+    "Message" TEXT NOT NULL,
+    "Error" TEXT NULL
+);
+""");
+
+        EnsureTable(conn, createSql: """
+CREATE INDEX IF NOT EXISTS "IX_BackgroundTasks_Type_Status_CreatedAtUtc" ON "BackgroundTasks" ("Type", "Status", "CreatedAtUtc");
+""");
+
         EnsureColumn(conn,
             table: "UniverseSettings",
             column: "UniverseFundCount",
