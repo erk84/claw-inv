@@ -32,11 +32,6 @@ else
         <div class="tab-pane fade @(i==0?"show active":"")" id="pane-@s.Id" role="tabpanel">
             <h5>@s.DisplayName</h5>
 
-            <div class="mt-2">
-                <div><strong>Simulerat saldo:</strong> @Model.SimulatedBalanceByStrategyId.GetValueOrDefault(s.Id).ToString("0") kr (start 100 000 kr)</div>
-                <div class="text-muted"><small>Equal-weight, @s.Slots slots (modellportfölj).</small></div>
-            </div>
-
             <hr />
 
             <h6>Aktiva fonder</h6>
@@ -66,40 +61,6 @@ else
 
             <hr />
 
-            <h6>Senaste rekommendation</h6>
-            @if (r is null)
-            {
-                <p>Ingen rebalance-rekommendation ännu (skapas bara när intervallet säger att det är dags).</p>
-            }
-            else
-            {
-                <div><strong>As-of:</strong> @r.AsOfDate</div>
-
-                @if (r.Trades.Count == 0)
-                {
-                    <p class="mt-2">Inga trades i denna körning.</p>
-                }
-                else
-                {
-                    <table class="table table-sm mt-2">
-                        <thead><tr><th>Action</th><th>Fond</th><th>Reason</th><th class="text-end">In</th><th class="text-end">Ut</th></tr></thead>
-                        <tbody>
-                        @foreach (var t in r.Trades)
-                        {
-                            <tr>
-                                <td>@t.Action</td>
-                                <td>@t.FundName</td>
-                                <td>@t.Reason</td>
-                                <td class="text-end">@(t.InAmount is null ? "-" : $"{t.InAmount.Value:0} kr")</td>
-                                <td class="text-end">@(t.OutAmount is null ? "-" : $"{t.OutAmount.Value:0} kr")</td>
-                            </tr>
-                        }
-                        </tbody>
-                    </table>
-                }
-            }
-
-            <hr />
 
             <h6>Utveckling (senaste 10 åren, %)</h6>
             @{
