@@ -16,6 +16,7 @@ builder.Services.AddDbContext<AppDbContext>(o =>
     o.UseSqlite(connString));
 
 builder.Services.AddSingleton<UniverseRegenerator>();
+builder.Services.AddSingleton<NavService>();
 builder.Services.AddScoped<RecommendationEngine>();
 builder.Services.AddHostedService<ScheduledJobsService>();
 

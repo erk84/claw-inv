@@ -45,6 +45,31 @@ CREATE TABLE IF NOT EXISTS "TradeRecommendations" (
     CONSTRAINT "FK_TradeRecommendations_RecommendationRuns_RecommendationRunId" FOREIGN KEY ("RecommendationRunId") REFERENCES "RecommendationRuns" ("Id") ON DELETE CASCADE
 );
 """);
+
+        EnsureColumn(conn,
+            table: "UniverseSettings",
+            column: "UniverseFundCount",
+            columnSql: "INTEGER NOT NULL DEFAULT 0");
+
+        EnsureColumn(conn,
+            table: "UniverseSettings",
+            column: "LastRegeneratedAtUtc",
+            columnSql: "TEXT NULL");
+
+        EnsureColumn(conn,
+            table: "UniverseSettings",
+            column: "RatingLimit",
+            columnSql: "INTEGER NOT NULL DEFAULT 3");
+
+        EnsureColumn(conn,
+            table: "UniverseSettings",
+            column: "RiskLimit",
+            columnSql: "INTEGER NOT NULL DEFAULT 0");
+
+        EnsureColumn(conn,
+            table: "UniverseSettings",
+            column: "TotalFeeLimit",
+            columnSql: "REAL NOT NULL DEFAULT 2.0");
     }
 
     private static void EnsureTable(SqliteConnection conn, string createSql)

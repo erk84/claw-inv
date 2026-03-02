@@ -4,8 +4,19 @@ using Microsoft.EntityFrameworkCore;
 
 namespace ClawInv.Web.Services;
 
-public sealed class RecommendationEngine(ILogger<RecommendationEngine> log, AppDbContext db)
+public sealed class RecommendationEngine(ILogger<RecommendationEngine> log, AppDbContext db, NavService nav)
 {
+    private static double? TryGetNav(IReadOnlyList<ClawInv.Core.Backtest.NavSeries> series, string fundId, DateOnly date)
+    {
+        var s = series.FirstOrDefault(x => x.OrderbookId == fundId);
+        if (s is null) return null;
+        var p = s.Points
+            .Where(p => p.Date <= date)
+            .OrderByDescending(p => p.Date)
+            .FirstOrDefault();
+        return p is null ? null : (double)p.Nav;
+    }
+
     public async Task<RecommendationRun?> ComputeIfDueAsync(int strategyConfigId, DateOnly asOfDate, CancellationToken ct)
     {
         var strategy = await db.StrategyConfigs.SingleAsync(x => x.Id == strategyConfigId, ct);
@@ -34,25 +45,77 @@ public sealed class RecommendationEngine(ILogger<RecommendationEngine> log, AppD
             return null;
         }
 
-        // TODO: plug in ClawInv.Core daily selection logic + compute diff vs current holdings.
-        // For now we emit a run record indicating a rebalance would be evaluated.
+        // Load NAV with enough lookback to make selection.
+        var lookbackMonths = Math.Max(24, strategy.LookbackMonths + 24);
+        var from = asOfDate.AddMonths(-lookbackMonths);
+        var series = await nav.LoadUniverseNavAsync(from, asOfDate, ct);
+
+        var def = StrategyMapper.ToStrategyDefinition(strategy);
+        var targetIds = ClawInv.Core.Backtest.MonthEndRebalanceDailyBacktester.SelectHoldingsAt(def, series, asOfDate);
+
+        // Current "model" holdings
+        var current = await db.PortfolioHoldings
+            .Where(h => h.PortfolioId == portfolio.Id && h.SellDate == null)
+            .ToListAsync(ct);
+
+        var currentIds = current.Select(x => x.FundId).ToHashSet();
+        var targetSet = targetIds.ToHashSet();
+
+        var trades = new List<TradeRecommendation>();
+
+        // Sells
+        foreach (var h in current.Where(h => !targetSet.Contains(h.FundId)))
+        {
+            trades.Add(new TradeRecommendation
+            {
+                Action = RecommendationAction.Sell,
+                FundId = h.FundId,
+                FundName = h.FundName,
+                Reason = "Not in target holdings on rebalance"
+            });
+
+            h.SellDate = asOfDate;
+            var sell = TryGetNav(series, h.FundId, asOfDate);
+            h.SellNav = sell is null ? null : (decimal)sell.Value;
+        }
+
+        // Buys
+        foreach (var id in targetIds.Where(id => !currentIds.Contains(id)))
+        {
+            var s = series.FirstOrDefault(x => x.OrderbookId == id);
+            trades.Add(new TradeRecommendation
+            {
+                Action = RecommendationAction.Buy,
+                FundId = id,
+                FundName = s?.Name ?? id,
+                Reason = "Selected by strategy on rebalance"
+            });
+
+            db.PortfolioHoldings.Add(new PortfolioHolding
+            {
+                PortfolioId = portfolio.Id,
+                FundId = id,
+                FundName = s?.Name ?? id,
+                BuyDate = asOfDate,
+                BuyNav = (decimal)(TryGetNav(series, id, asOfDate) ?? 0.0)
+            });
+        }
+
         var run = new RecommendationRun
         {
             StrategyConfigId = strategy.Id,
             AsOfDate = asOfDate,
-            Notes = "Rebalance due. TODO compute target holdings + trade diff.",
-            Trades = new List<TradeRecommendation>()
+            Notes = $"Rebalance due. Target={string.Join(",", targetIds)}",
+            Trades = trades
         };
 
         db.RecommendationRuns.Add(run);
 
-        // Mark rebalance as executed (recommendation produced). When we later implement "recommended trades"
-        // vs "executed trades" we might want a separate field, but for now this drives scheduling.
         portfolio.LastRebalanceDate = asOfDate;
 
         await db.SaveChangesAsync(ct);
 
-        log.LogInformation("Created rebalance recommendation run for {Key} as-of {AsOf}", strategy.Key, asOfDate);
+        log.LogInformation("Created recommendation run for {Key} as-of {AsOf}: {Trades} trades", strategy.Key, asOfDate, trades.Count);
         return run;
     }
 }

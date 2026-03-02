@@ -11,6 +11,19 @@ namespace ClawInv.Core.Backtest;
 /// </summary>
 public static class MonthEndRebalanceDailyBacktester
 {
+    public static IReadOnlyList<string> SelectHoldingsAt(
+        StrategyDefinition strat,
+        IReadOnlyList<NavSeries> series,
+        DateOnly asOf)
+    {
+        if (strat.TopK > 2)
+            throw new ArgumentException("MonthEndRebalanceDailyBacktester supports TopK<=2.");
+
+        var fundIndex = series.ToDictionary(s => s.OrderbookId, s => s.Points.OrderBy(p => p.Date).ToArray());
+        var holdings = ChooseHoldings(strat, series, fundIndex, asOf);
+        return holdings.Keys.OrderBy(x => x).ToArray();
+    }
+
     public static BacktestResult Run(
         StrategyDefinition strat,
         IReadOnlyList<NavSeries> series,
