@@ -57,14 +57,18 @@ public sealed class ScheduledJobsService(
                     using var scope = scopeFactory.CreateScope();
                     var db = scope.ServiceProvider.GetRequiredService<ClawInv.Web.Data.AppDbContext>();
                     var engine = scope.ServiceProvider.GetRequiredService<RecommendationEngine>();
+                    var snapshots = scope.ServiceProvider.GetRequiredService<SnapshotEngine>();
 
                     var enabled = await db.StrategyConfigs.Where(x => x.Enabled).Select(x => x.Id).ToListAsync(stoppingToken);
-                    log.LogInformation("Daily jobs: computing recommendations for {Count} enabled strategies", enabled.Count);
+                    log.LogInformation("Daily jobs: updating snapshots + computing recommendations for {Count} enabled strategies", enabled.Count);
 
                     var asOf = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-1));
 
                     foreach (var id in enabled)
+                    {
+                        await snapshots.RebuildLast5YearsAsync(id, asOf, stoppingToken);
                         await engine.ComputeIfDueAsync(id, asOf, stoppingToken);
+                    }
                 }
                 catch (Exception ex)
                 {

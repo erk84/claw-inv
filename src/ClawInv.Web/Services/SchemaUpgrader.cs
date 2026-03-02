@@ -46,6 +46,38 @@ CREATE TABLE IF NOT EXISTS "TradeRecommendations" (
 );
 """);
 
+        EnsureTable(conn, createSql: """
+CREATE TABLE IF NOT EXISTS "TradeEvents" (
+    "Id" INTEGER NOT NULL CONSTRAINT "PK_TradeEvents" PRIMARY KEY AUTOINCREMENT,
+    "PortfolioId" INTEGER NOT NULL,
+    "Date" TEXT NOT NULL,
+    "FundId" TEXT NOT NULL,
+    "FundName" TEXT NOT NULL,
+    "Side" INTEGER NOT NULL,
+    "Nav" TEXT NOT NULL,
+    CONSTRAINT "FK_TradeEvents_Portfolios_PortfolioId" FOREIGN KEY ("PortfolioId") REFERENCES "Portfolios" ("Id") ON DELETE CASCADE
+);
+""");
+
+        EnsureTable(conn, createSql: """
+CREATE TABLE IF NOT EXISTS "PortfolioDailySnapshots" (
+    "Id" INTEGER NOT NULL CONSTRAINT "PK_PortfolioDailySnapshots" PRIMARY KEY AUTOINCREMENT,
+    "PortfolioId" INTEGER NOT NULL,
+    "Date" TEXT NOT NULL,
+    "EquityIndex" REAL NOT NULL,
+    CONSTRAINT "FK_PortfolioDailySnapshots_Portfolios_PortfolioId" FOREIGN KEY ("PortfolioId") REFERENCES "Portfolios" ("Id") ON DELETE CASCADE
+);
+""");
+
+        // Indices (IF NOT EXISTS supported by SQLite)
+        EnsureTable(conn, createSql: """
+CREATE UNIQUE INDEX IF NOT EXISTS "IX_PortfolioDailySnapshots_PortfolioId_Date" ON "PortfolioDailySnapshots" ("PortfolioId", "Date");
+""");
+
+        EnsureTable(conn, createSql: """
+CREATE INDEX IF NOT EXISTS "IX_TradeEvents_PortfolioId_Date" ON "TradeEvents" ("PortfolioId", "Date");
+""");
+
         EnsureColumn(conn,
             table: "UniverseSettings",
             column: "UniverseFundCount",
