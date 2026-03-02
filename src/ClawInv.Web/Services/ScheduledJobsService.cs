@@ -61,8 +61,10 @@ public sealed class ScheduledJobsService(
                     var enabled = await db.StrategyConfigs.Where(x => x.Enabled).Select(x => x.Id).ToListAsync(stoppingToken);
                     log.LogInformation("Daily jobs: computing recommendations for {Count} enabled strategies", enabled.Count);
 
+                    var asOf = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-1));
+
                     foreach (var id in enabled)
-                        await engine.ComputeAsync(id, stoppingToken);
+                        await engine.ComputeIfDueAsync(id, asOf, stoppingToken);
                 }
                 catch (Exception ex)
                 {

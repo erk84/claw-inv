@@ -9,6 +9,8 @@ public sealed class Portfolio
 
     public DateOnly StartDate { get; set; }
 
+    public DateOnly? LastRebalanceDate { get; set; }
+
     // how far back to show in UI; default 5y window is done in UI query.
 
     public List<PortfolioHolding> Holdings { get; set; } = new();
