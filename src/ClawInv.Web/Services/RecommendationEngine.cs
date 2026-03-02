@@ -77,6 +77,16 @@ public sealed class RecommendationEngine(ILogger<RecommendationEngine> log, AppD
             h.SellDate = asOfDate;
             var sell = TryGetNav(series, h.FundId, asOfDate);
             h.SellNav = sell is null ? null : (decimal)sell.Value;
+
+            db.TradeEvents.Add(new TradeEvent
+            {
+                PortfolioId = portfolio.Id,
+                Date = asOfDate,
+                FundId = h.FundId,
+                FundName = h.FundName,
+                Side = TradeSide.Sell,
+                Nav = h.SellNav ?? 0m
+            });
         }
 
         // Buys
@@ -91,13 +101,25 @@ public sealed class RecommendationEngine(ILogger<RecommendationEngine> log, AppD
                 Reason = "Selected by strategy on rebalance"
             });
 
+            var buyNav = TryGetNav(series, id, asOfDate);
+
             db.PortfolioHoldings.Add(new PortfolioHolding
             {
                 PortfolioId = portfolio.Id,
                 FundId = id,
                 FundName = s?.Name ?? id,
                 BuyDate = asOfDate,
-                BuyNav = (decimal)(TryGetNav(series, id, asOfDate) ?? 0.0)
+                BuyNav = (decimal)(buyNav ?? 0.0)
+            });
+
+            db.TradeEvents.Add(new TradeEvent
+            {
+                PortfolioId = portfolio.Id,
+                Date = asOfDate,
+                FundId = id,
+                FundName = s?.Name ?? id,
+                Side = TradeSide.Buy,
+                Nav = (decimal)(buyNav ?? 0.0)
             });
         }
 

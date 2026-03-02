@@ -41,10 +41,37 @@ else
 
             <hr />
 
+            <h6>Aktiva fonder</h6>
+            @{
+                var active = Model.ActiveHoldingsByStrategyId.GetValueOrDefault(s.Id) ?? new();
+            }
+            @if (active.Count == 0)
+            {
+                <p>Inga aktiva innehav ännu.</p>
+            }
+            else
+            {
+                <table class="table table-sm">
+                    <thead><tr><th>Fond</th><th>Köpdatum</th><th>Utveckling sen köp</th></tr></thead>
+                    <tbody>
+                    @foreach (var h in active)
+                    {
+                        <tr>
+                            <td>@h.FundName</td>
+                            <td>@h.BuyDate</td>
+                            <td>@(h.PerfPct is null ? "-" : $"{h.PerfPct:0.##}%")</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            }
+
+            <hr />
+
             <h6>Senaste rekommendation</h6>
             @if (r is null)
             {
-                <p>Ingen körning ännu (dagligt jobb skapar en körning när strategin är aktiv).</p>
+                <p>Ingen rebalance-rekommendation ännu (skapas bara när intervallet säger att det är dags).</p>
             }
             else
             {
@@ -54,7 +81,7 @@ else
 
                 @if (r.Trades.Count == 0)
                 {
-                    <p class="mt-2">Inga trades listade än (placeholder).</p>
+                    <p class="mt-2">Inga trades i denna körning.</p>
                 }
                 else
                 {
@@ -72,6 +99,34 @@ else
                         </tbody>
                     </table>
                 }
+            }
+
+            <hr />
+
+            <h6>Historik (senaste 5 åren)</h6>
+            @{
+                var hist = Model.RecentTradesByStrategyId.GetValueOrDefault(s.Id) ?? new();
+            }
+            @if (hist.Count == 0)
+            {
+                <p>Ingen historik ännu.</p>
+            }
+            else
+            {
+                <table class="table table-sm">
+                    <thead><tr><th>Datum</th><th>Side</th><th>Fond</th><th>NAV</th></tr></thead>
+                    <tbody>
+                    @foreach (var t in hist)
+                    {
+                        <tr>
+                            <td>@t.Date</td>
+                            <td>@t.Side</td>
+                            <td>@t.FundName</td>
+                            <td>@t.Nav</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
             }
         </div>
     }
