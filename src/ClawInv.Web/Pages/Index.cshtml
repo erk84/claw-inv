@@ -161,12 +161,16 @@ else
                 var s = Model.EnabledStrategies[i];
                 var snaps = Model.SnapshotsByStrategyId.GetValueOrDefault(s.Id) ?? new();
                 if (snaps.Count == 0) { continue; }
+
+                var cfg = new
+                {
+                    label = s.DisplayName,
+                    labels = snaps.Select(x => x.Date.ToString("yyyy-MM-dd")).ToArray(),
+                    data = snaps.Select(x => x.PerfPct).ToArray()
+                };
+
                 <text>
-                '@s.Id': {
-                    label: '@s.DisplayName',
-                    labels: [@string.Join(",", snaps.Select(x => $"'{x.Date:yyyy-MM-dd}'"))],
-                    data: [@string.Join(",", snaps.Select(x => x.PerfPct.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture)))]
-                },
+                '@s.Id': @Html.Raw(System.Text.Json.JsonSerializer.Serialize(cfg)),
                 </text>
             }
         };
