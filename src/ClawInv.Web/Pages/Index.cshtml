@@ -149,11 +149,22 @@ else
     }
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <script>
     (function () {
-        // Bootstrap tabs hide canvases; Chart.js often renders blank in hidden tabs.
-        // Create charts lazily when a tab is shown.
+        function loadScript(src) {
+            return new Promise((resolve, reject) => {
+                const s = document.createElement('script');
+                s.src = src;
+                s.async = true;
+                s.onload = () => resolve();
+                s.onerror = () => reject(new Error('Failed to load ' + src));
+                document.head.appendChild(s);
+            });
+        }
+
+        // Try CDN first, fall back to a locally vendored copy.
+        const chartCdn = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js';
+        const chartLocal = '/lib/chartjs/chart.umd.min.js';
 
         const chartConfigs = {
             @for (var i = 0; i < Model.EnabledStrategies.Count; i++)
@@ -178,52 +189,69 @@ else
             const cfg = chartConfigs[strategyId];
             if (!cfg) return;
 
-            if (!window.Chart) {
-                console.warn('Chart.js not loaded');
-                return;
-            }
-
             const canvas = document.getElementById('chart-' + strategyId);
             if (!canvas) return;
 
-            chartsById[strategyId] = new Chart(canvas, {
-                type: 'line',
-                data: {
-                    labels: cfg.labels,
-                    datasets: [{
-                        label: cfg.label,
-                        data: cfg.data,
-                        borderWidth: 1,
-                        pointRadius: 0,
-                        tension: 0.05
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: { legend: { display: false } },
-                    scales: {
-                        x: { ticks: { maxTicksLimit: 6 } },
-                        y: { ticks: { callback: (v) => v + '%' } }
+            if (!window.Chart) {
+                console.warn('Chart.js not loaded');
+                canvas.insertAdjacentHTML('beforebegin', '<div class="text-danger"><small>Chart.js kunde inte laddas (CDN blockad?).</small></div>');
+                return;
+            }
+
+            // Ensure canvas has layout before creating the chart.
+            requestAnimationFrame(() => {
+                chartsById[strategyId] = new Chart(canvas, {
+                    type: 'line',
+                    data: {
+                        labels: cfg.labels,
+                        datasets: [{
+                            label: cfg.label,
+                            data: cfg.data,
+                            borderWidth: 1,
+                            pointRadius: 0,
+                            tension: 0.05
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { display: false } },
+                        scales: {
+                            x: { ticks: { maxTicksLimit: 6 } },
+                            y: { ticks: { callback: (v) => v + '%' } }
+                        }
                     }
-                }
+                });
             });
         }
 
-        // Render first (active) tab chart immediately.
-        const firstTab = document.querySelector('.nav-tabs .nav-link.active');
-        if (firstTab) {
-            const id = (firstTab.getAttribute('id') || '').replace('tab-', '');
-            if (id) ensureChart(id);
-        }
-
-        // Render on tab show.
-        document.querySelectorAll('button[data-bs-toggle="tab"]').forEach(btn => {
-            btn.addEventListener('shown.bs.tab', (ev) => {
-                const id = (ev.target.getAttribute('id') || '').replace('tab-', '');
+        function init() {
+            // Render first (active) tab chart immediately.
+            const firstTab = document.querySelector('.nav-tabs .nav-link.active');
+            if (firstTab) {
+                const id = (firstTab.getAttribute('id') || '').replace('tab-', '');
                 if (id) ensureChart(id);
+            }
+
+            // Render on tab show.
+            document.querySelectorAll('button[data-bs-toggle="tab"]').forEach(btn => {
+                btn.addEventListener('shown.bs.tab', (ev) => {
+                    const id = (ev.target.getAttribute('id') || '').replace('tab-', '');
+                    if (id) ensureChart(id);
+                });
             });
-        });
+        }
+
+        // If Chart is already present, go.
+        if (window.Chart) {
+            init();
+            return;
+        }
+
+        loadScript(chartCdn)
+            .catch(() => loadScript(chartLocal))
+            .then(init)
+            .catch(err => console.error(err));
     })();
     </script>
 }
