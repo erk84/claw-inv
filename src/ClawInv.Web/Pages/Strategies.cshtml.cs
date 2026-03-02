@@ -68,6 +68,7 @@ public sealed class StrategiesModel(AppDbContext db, BackgroundTaskWorker tasks)
         var rows = await db.StrategyConfigs.Where(x => ids.Contains(x.Id)).ToListAsync(ct);
 
         var newlyEnabled = new List<int>();
+        var newlyDisabled = new List<int>();
 
         foreach (var row in rows)
         {
@@ -88,12 +89,23 @@ public sealed class StrategiesModel(AppDbContext db, BackgroundTaskWorker tasks)
             if (!wasEnabled && row.Enabled)
                 newlyEnabled.Add(row.Id);
 
+            if (wasEnabled && !row.Enabled)
+                newlyDisabled.Add(row.Id);
+
             // Soft-change: mark pending when settings changed.
             // (We'll use this later in the rebalance recommendation logic.)
             row.PendingChangesAtUtc = DateTimeOffset.UtcNow;
         }
 
         await db.SaveChangesAsync(ct);
+
+        // If a strategy is disabled, clear its model history so re-enabling starts clean.
+        // (This is destructive by design.)
+        if (newlyDisabled.Count > 0)
+        {
+            foreach (var id in newlyDisabled)
+                await ClearStrategyHistoryAsync(id, ct);
+        }
 
         // Bootstrap any newly enabled strategies (non-destructive: only if empty)
         // Done in background so the UI stays responsive (especially on a Raspberry Pi).
@@ -105,5 +117,58 @@ public sealed class StrategiesModel(AppDbContext db, BackgroundTaskWorker tasks)
         }
 
         return RedirectToPage();
+    }
+
+    private async Task ClearStrategyHistoryAsync(int strategyConfigId, CancellationToken ct)
+    {
+        // Delete model data for this strategy.
+        // Note: ExecuteDelete requires EF Core 7+ (we're on 8).
+
+        // Find portfolio id(s) for this strategy.
+        var portfolioIds = await db.Portfolios
+            .Where(p => p.StrategyConfigId == strategyConfigId)
+            .Select(p => p.Id)
+            .ToListAsync(ct);
+
+        if (portfolioIds.Count > 0)
+        {
+            await db.PortfolioDailySnapshots
+                .Where(s => portfolioIds.Contains(s.PortfolioId))
+                .ExecuteDeleteAsync(ct);
+
+            await db.TradeEvents
+                .Where(t => portfolioIds.Contains(t.PortfolioId))
+                .ExecuteDeleteAsync(ct);
+
+            await db.PortfolioHoldings
+                .Where(h => portfolioIds.Contains(h.PortfolioId))
+                .ExecuteDeleteAsync(ct);
+
+            await db.Portfolios
+                .Where(p => portfolioIds.Contains(p.Id))
+                .ExecuteDeleteAsync(ct);
+        }
+
+        // Recommendation runs + trade recommendations
+        var runIds = await db.RecommendationRuns
+            .Where(r => r.StrategyConfigId == strategyConfigId)
+            .Select(r => r.Id)
+            .ToListAsync(ct);
+
+        if (runIds.Count > 0)
+        {
+            await db.TradeRecommendations
+                .Where(t => runIds.Contains(t.RecommendationRunId))
+                .ExecuteDeleteAsync(ct);
+
+            await db.RecommendationRuns
+                .Where(r => runIds.Contains(r.Id))
+                .ExecuteDeleteAsync(ct);
+        }
+
+        // Background tasks
+        await db.BackgroundTasks
+            .Where(t => t.StrategyConfigId == strategyConfigId)
+            .ExecuteDeleteAsync(ct);
     }
 }
