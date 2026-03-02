@@ -131,15 +131,15 @@ else
             else
             {
                 <table class="table table-sm">
-                    <thead><tr><th>Datum</th><th>Side</th><th>Fond</th><th>NAV</th></tr></thead>
+                    <thead><tr><th>Fond</th><th>Köpdatum</th><th>Säljdatum</th><th>Resultat</th></tr></thead>
                     <tbody>
                     @foreach (var t in hist)
                     {
                         <tr>
-                            <td>@t.Date</td>
-                            <td>@t.Side</td>
                             <td>@t.FundName</td>
-                            <td>@t.Nav</td>
+                            <td>@t.BuyDate</td>
+                            <td>@(t.SellDate?.ToString() ?? "-")</td>
+                            <td>@(t.PerfPct is null ? "-" : $"{t.PerfPct:0.##}%")</td>
                         </tr>
                     }
                     </tbody>

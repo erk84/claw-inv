@@ -14,7 +14,7 @@ public sealed class IndexModel(AppDbContext db, NavLookupService nav) : PageMode
 
     public Dictionary<int, List<HoldingVm>> ActiveHoldingsByStrategyId { get; private set; } = new();
 
-    public Dictionary<int, List<TradeVm>> RecentTradesByStrategyId { get; private set; } = new();
+    public Dictionary<int, List<TradeRoundTripVm>> RecentTradesByStrategyId { get; private set; } = new();
 
     public Dictionary<int, List<SnapshotVm>> SnapshotsByStrategyId { get; private set; } = new();
 
@@ -27,7 +27,12 @@ public sealed class IndexModel(AppDbContext db, NavLookupService nav) : PageMode
         decimal? PerfPct
     );
 
-    public sealed record TradeVm(DateOnly Date, string FundName, string Side, decimal Nav);
+    public sealed record TradeRoundTripVm(
+        string FundId,
+        string FundName,
+        DateOnly BuyDate,
+        DateOnly? SellDate,
+        decimal? PerfPct);
 
     public sealed record SnapshotVm(DateOnly Date, double PerfPct);
 
@@ -94,10 +99,10 @@ public sealed class IndexModel(AppDbContext db, NavLookupService nav) : PageMode
                 .ToList();
         }
 
-        // Trades last 5y
-        var trades = await db.TradeEvents
-            .Where(t => pids.Contains(t.PortfolioId) && t.Date >= cutoff)
-            .OrderByDescending(t => t.Date)
+        // Trade history: show one row per holding (buy->sell) with percent performance.
+        var recentHoldings = await db.PortfolioHoldings
+            .Where(h => pids.Contains(h.PortfolioId) && h.BuyDate >= cutoff)
+            .OrderByDescending(h => h.BuyDate)
             .ToListAsync(ct);
 
         foreach (var s in EnabledStrategies)
@@ -105,11 +110,41 @@ public sealed class IndexModel(AppDbContext db, NavLookupService nav) : PageMode
             if (!portfolioByStrategyId.TryGetValue(s.Id, out var p))
                 continue;
 
-            RecentTradesByStrategyId[s.Id] = trades
-                .Where(t => t.PortfolioId == p.Id)
+            var rows = recentHoldings
+                .Where(h => h.PortfolioId == p.Id)
                 .Take(200)
-                .Select(t => new TradeVm(t.Date, t.FundName, t.Side.ToString(), t.Nav))
+                .Select(h =>
+                {
+                    decimal? perf = null;
+
+                    if (h.BuyNav > 0m)
+                    {
+                        if (h.SellDate is not null)
+                        {
+                            // Use sell NAV if available, otherwise fallback to nav lookup.
+                            var sellNav = h.SellNav;
+                            if (sellNav is null)
+                            {
+                                var ln = nav.TryGetNavAtOrBefore(h.FundId, h.SellDate.Value);
+                                if (ln.HasValue) sellNav = ln.Value;
+                            }
+
+                            if (sellNav is not null && sellNav.Value > 0m)
+                                perf = (sellNav.Value / h.BuyNav - 1m) * 100m;
+                        }
+                        else
+                        {
+                            var latestNav = nav.TryGetNavAtOrBefore(h.FundId, asOf);
+                            if (latestNav.HasValue && latestNav.Value > 0m)
+                                perf = (latestNav.Value / h.BuyNav - 1m) * 100m;
+                        }
+                    }
+
+                    return new TradeRoundTripVm(h.FundId, h.FundName, h.BuyDate, h.SellDate, perf);
+                })
                 .ToList();
+
+            RecentTradesByStrategyId[s.Id] = rows;
         }
 
         // Snapshots last 5y (for chart)
