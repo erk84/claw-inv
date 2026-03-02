@@ -12,30 +12,20 @@ internal sealed class LowVolLogic : IStrategyLogic
         IReadOnlyDictionary<string, NavPoint[]> fundIndex,
         DateOnly asOf)
     {
-        // Approximate vol with monthly return stdev over VolatilityLookbackMonths.
-        // (Uses sparse monthly points via nav-at-or-before.)
+        // Prefer using daily vol over the lookback window.
         var lb = Math.Max(2, strat.VolatilityLookbackMonths);
+        var from = asOf.AddMonths(-lb);
+
         var vols = new List<(string id, double vol)>();
 
         foreach (var s in series)
         {
-            var returns = new List<double>();
-            for (var i = lb; i >= 1; i--)
-            {
-                var d = asOf.AddMonths(-i + 1);
-                var r = StrategyNavHelpers.MonthlyReturn(fundIndex, s.OrderbookId, d, 1);
-                if (r is not null && !double.IsNaN(r.Value))
-                    returns.Add(r.Value);
-            }
-
-            if (returns.Count < 2)
+            if (!fundIndex.TryGetValue(s.OrderbookId, out var pts))
                 continue;
 
-            var mean = returns.Average();
-            var varSum = returns.Sum(x => (x - mean) * (x - mean));
-            var variance = varSum / (returns.Count - 1);
-            var vol = Math.Sqrt(variance) * Math.Sqrt(12.0);
-            vols.Add((s.OrderbookId, vol));
+            var v = VolAnnualized(pts, from, asOf);
+            if (v is null) continue;
+            vols.Add((s.OrderbookId, (double)v.Value));
         }
 
         var chosen = vols
@@ -49,5 +39,35 @@ internal sealed class LowVolLogic : IStrategyLogic
 
         var w = 1.0m / chosen.Length;
         return chosen.ToDictionary(x => x, _ => w);
+    }
+
+    private static decimal? VolAnnualized(NavPoint[] points, DateOnly from, DateOnly to)
+    {
+        // Daily returns from available NAV points within range.
+        var dates = points.Select(p => p.Date)
+            .Where(d => d >= from && d <= to)
+            .Distinct()
+            .OrderBy(d => d)
+            .ToArray();
+
+        if (dates.Length < 5) return null;
+
+        var rets = new List<decimal>();
+        for (var i = 1; i < dates.Length; i++)
+        {
+            var a = StrategyNavHelpers.NavAtOrBefore(points, dates[i - 1]);
+            var b = StrategyNavHelpers.NavAtOrBefore(points, dates[i]);
+            if (a is null || b is null) continue;
+            if (a.Value <= 0) continue;
+            rets.Add(b.Value / a.Value - 1.0m);
+        }
+
+        if (rets.Count < 4) return null;
+
+        var mean = rets.Average();
+        var varSum = rets.Sum(x => (x - mean) * (x - mean));
+        var variance = varSum / (rets.Count - 1);
+        var stdev = (decimal)Math.Sqrt((double)variance);
+        return stdev * (decimal)Math.Sqrt(252.0);
     }
 }
