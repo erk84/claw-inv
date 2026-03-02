@@ -43,11 +43,14 @@ public sealed class IndexModel(AppDbContext db, NavLookupService nav) : PageMode
 
         var ids = EnabledStrategies.Select(x => x.Id).ToList();
 
-        var runs = await db.RecommendationRuns
-            .Include(r => r.Trades)
-            .Where(r => ids.Contains(r.StrategyConfigId))
+        // SQLite provider does not support ordering by DateTimeOffset (NotSupportedException).
+        // Load then order client-side.
+        var runs = (await db.RecommendationRuns
+                .Include(r => r.Trades)
+                .Where(r => ids.Contains(r.StrategyConfigId))
+                .ToListAsync(ct))
             .OrderByDescending(r => r.CreatedAtUtc)
-            .ToListAsync(ct);
+            .ToList();
 
         LatestRunByStrategyId = runs
             .GroupBy(r => r.StrategyConfigId)

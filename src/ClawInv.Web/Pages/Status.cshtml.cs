@@ -67,10 +67,14 @@ public sealed class StatusModel(AppDbContext db) : PageModel
                 snap);
         }).ToList();
 
-        RecentTasks = await db.BackgroundTasks
+        // SQLite provider does not support ordering by DateTimeOffset (NotSupportedException).
+        // Load then order client-side (small volume).
+        RecentTasks = (await db.BackgroundTasks
+                .AsNoTracking()
+                .ToListAsync(ct))
             .OrderByDescending(t => t.CreatedAtUtc)
             .Take(50)
-            .ToListAsync(ct);
+            .ToList();
 
         Jobs = await db.JobStates
             .OrderBy(x => x.Key)
