@@ -11,6 +11,8 @@ public static class StrategyLogicRegistry
             new MeanReversionLogic(),
             new MinVariance2Logic(),
             new CorrFilteredTopKLogic(),
+            new SharpeProxyLogic(),
+            new BandReversionLogic(),
         }.ToDictionary(x => x.Type, x => x);
 
     public static IStrategyLogic Get(StrategyType type)

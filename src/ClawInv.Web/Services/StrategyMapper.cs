@@ -18,9 +18,9 @@ public static class StrategyMapper
             ResearchStrategyKind.MinVariance2 => StrategyType.MinVariance2,
 
             // These currently exist in research mode only; map to closest until we add dedicated daily implementations.
-            ResearchStrategyKind.SharpeProxy => StrategyType.MomentumRotation,
+            ResearchStrategyKind.SharpeProxy => StrategyType.SharpeProxy,
             ResearchStrategyKind.CorrFilteredTop2 => StrategyType.CorrFilteredTopK,
-            ResearchStrategyKind.BandReversion => StrategyType.MeanReversionRotation,
+            ResearchStrategyKind.BandReversion => StrategyType.BandReversion,
 
             _ => StrategyType.MomentumRotation
         };

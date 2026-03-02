@@ -121,6 +121,19 @@ CREATE TABLE IF NOT EXISTS "BackgroundTasks" (
 CREATE INDEX IF NOT EXISTS "IX_BackgroundTasks_Type_Status_CreatedAtUtc" ON "BackgroundTasks" ("Type", "Status", "CreatedAtUtc");
 """);
 
+        EnsureTable(conn, createSql: """
+CREATE TABLE IF NOT EXISTS "JobStates" (
+    "Id" INTEGER NOT NULL CONSTRAINT "PK_JobStates" PRIMARY KEY AUTOINCREMENT,
+    "Key" TEXT NOT NULL,
+    "LastRunAtUtc" TEXT NULL,
+    "LastError" TEXT NULL
+);
+""");
+
+        EnsureTable(conn, createSql: """
+CREATE UNIQUE INDEX IF NOT EXISTS "IX_JobStates_Key" ON "JobStates" ("Key");
+""");
+
         EnsureColumn(conn,
             table: "UniverseSettings",
             column: "UniverseFundCount",

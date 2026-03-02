@@ -13,6 +13,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<PortfolioDailySnapshot> PortfolioDailySnapshots => Set<PortfolioDailySnapshot>();
 
     public DbSet<BackgroundTask> BackgroundTasks => Set<BackgroundTask>();
+    public DbSet<JobState> JobStates => Set<JobState>();
 
     public DbSet<RecommendationRun> RecommendationRuns => Set<RecommendationRun>();
     public DbSet<TradeRecommendation> TradeRecommendations => Set<TradeRecommendation>();
@@ -67,5 +68,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
 
         modelBuilder.Entity<BackgroundTask>()
             .HasIndex(t => new { t.Type, t.Status, t.CreatedAtUtc });
+
+        modelBuilder.Entity<JobState>().HasIndex(x => x.Key).IsUnique();
     }
 }

@@ -9,6 +9,8 @@ public enum StrategyType
     MeanReversionRotation,
     MinVariance2,
     CorrFilteredTopK,
+    SharpeProxy,
+    BandReversion,
     EqualWeightBuyAndHold,
     BestStrategyV1MonthEnd
 }
