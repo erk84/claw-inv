@@ -26,6 +26,13 @@ public sealed class StrategiesModel(AppDbContext db, BootstrapEngine bootstrap) 
         public bool UseAbsoluteMomentum { get; set; }
         public bool UseLowVolFilter { get; set; }
 
+        public int Regime { get; set; }
+        public int RegimeMaMonths { get; set; }
+        public double RegimeThreshold { get; set; }
+
+        public int RiskOffMode { get; set; }
+        public int DefensiveVolLookbackMonths { get; set; }
+
         public string DefaultSource { get; set; } = "";
     }
 
@@ -45,6 +52,11 @@ public sealed class StrategiesModel(AppDbContext db, BootstrapEngine bootstrap) 
                 TopK = x.TopK,
                 UseAbsoluteMomentum = x.UseAbsoluteMomentum,
                 UseLowVolFilter = x.UseLowVolFilter,
+                Regime = (int)x.Regime,
+                RegimeMaMonths = x.RegimeMaMonths,
+                RegimeThreshold = x.RegimeThreshold,
+                RiskOffMode = (int)x.RiskOffMode,
+                DefensiveVolLookbackMonths = x.DefensiveVolLookbackMonths,
                 DefaultSource = x.DefaultSource,
             })
             .ToListAsync(ct);
@@ -65,6 +77,13 @@ public sealed class StrategiesModel(AppDbContext db, BootstrapEngine bootstrap) 
             row.Enabled = i.Enabled;
             row.DisplayName = i.DisplayName;
             row.Slots = Math.Clamp(i.Slots, 1, 50);
+
+            row.Regime = (ClawInv.Core.Research.RegimeKind)Math.Clamp(i.Regime, 0, 3);
+            row.RegimeMaMonths = Math.Clamp(i.RegimeMaMonths, 1, 24);
+            row.RegimeThreshold = Math.Clamp(i.RegimeThreshold, -1.0, 1.0);
+
+            row.RiskOffMode = (ClawInv.Core.Strategies.RiskOffMode)Math.Clamp(i.RiskOffMode, 0, 1);
+            row.DefensiveVolLookbackMonths = Math.Clamp(i.DefensiveVolLookbackMonths, 1, 24);
 
             if (!wasEnabled && row.Enabled)
                 newlyEnabled.Add(row.Id);

@@ -19,6 +19,31 @@ public static class SchemaUpgrader
             columnSql: "TEXT NOT NULL DEFAULT ''");
 
         EnsureColumn(conn,
+            table: "StrategyConfigs",
+            column: "Regime",
+            columnSql: "INTEGER NOT NULL DEFAULT 0");
+
+        EnsureColumn(conn,
+            table: "StrategyConfigs",
+            column: "RegimeMaMonths",
+            columnSql: "INTEGER NOT NULL DEFAULT 10");
+
+        EnsureColumn(conn,
+            table: "StrategyConfigs",
+            column: "RegimeThreshold",
+            columnSql: "REAL NOT NULL DEFAULT 0.0");
+
+        EnsureColumn(conn,
+            table: "StrategyConfigs",
+            column: "RiskOffMode",
+            columnSql: "INTEGER NOT NULL DEFAULT 0");
+
+        EnsureColumn(conn,
+            table: "StrategyConfigs",
+            column: "DefensiveVolLookbackMonths",
+            columnSql: "INTEGER NOT NULL DEFAULT 12");
+
+        EnsureColumn(conn,
             table: "Portfolios",
             column: "LastRebalanceDate",
             columnSql: "TEXT NULL");

@@ -1,4 +1,5 @@
 using ClawInv.Core.Research;
+using ClawInv.Core.Strategies;
 
 namespace ClawInv.Web.Data.Entities;
 
@@ -26,6 +27,14 @@ public sealed class StrategyConfig
     public bool UseLowVolFilter { get; set; }
     public int VolLookbackMonths { get; set; } = 12;
     public int TrendMaMonths { get; set; } = 12;
+
+    // Market regime + risk-off behavior
+    public RegimeKind Regime { get; set; } = RegimeKind.None;
+    public int RegimeMaMonths { get; set; } = 10;
+    public double RegimeThreshold { get; set; } = 0.0;
+
+    public RiskOffMode RiskOffMode { get; set; } = RiskOffMode.Cash;
+    public int DefensiveVolLookbackMonths { get; set; } = 12;
 
     public string DefaultSource { get; set; } = "";
 

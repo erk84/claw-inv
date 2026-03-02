@@ -41,11 +41,11 @@ public static class StrategyMapper
             MovingAverageMonths: cfg.TrendMaMonths,
             VolatilityLookbackMonths: cfg.VolLookbackMonths,
             UseLowVolFilter: cfg.UseLowVolFilter,
-            Regime: RegimeKind.None,
-            RegimeMaMonths: 1,
-            RegimeThreshold: 0.0,
-            RiskOffMode: RiskOffMode.Cash,
-            DefensiveVolLookbackMonths: 6
+            Regime: cfg.Regime,
+            RegimeMaMonths: Math.Max(1, cfg.RegimeMaMonths),
+            RegimeThreshold: cfg.RegimeThreshold,
+            RiskOffMode: cfg.RiskOffMode,
+            DefensiveVolLookbackMonths: Math.Max(1, cfg.DefensiveVolLookbackMonths)
         );
     }
 }
