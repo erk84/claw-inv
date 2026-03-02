@@ -27,16 +27,47 @@ public sealed class StrategyOptimizer
 
         foreach (var f in universe.Funds)
         {
-            if (_navStore.TryRead(f.OrderbookId, out var cached))
+            if (_navStore.TryRead(f.OrderbookId, out var cached) && cached.Count > 0)
             {
-                list.Add(new NavSeries(f.Name, f.OrderbookId, cached));
+                var cachedFrom = cached[0].Date;
+                var cachedTo = cached[^1].Date;
+
+                // If cache fully covers requested range, use it.
+                if (cachedFrom <= from && cachedTo >= to)
+                {
+                    list.Add(new NavSeries(f.Name, f.OrderbookId, cached));
+                    continue;
+                }
+
+                // Otherwise fetch a window that overlaps the cached data so NavDataStore can rescale+merge.
+                var overlapDays = 45;
+                var fetchFrom = from;
+                var fetchTo = to;
+
+                if (to > cachedTo)
+                    fetchFrom = cachedTo.AddDays(-overlapDays);
+
+                if (from < cachedFrom)
+                    fetchTo = cachedFrom.AddDays(overlapDays);
+
+                // Clamp
+                if (fetchFrom < from) fetchFrom = from;
+                if (fetchTo > to) fetchTo = to;
+
+                var chart = await _avanza.GetFundChartAsync(f.OrderbookId, fetchFrom, fetchTo, ct);
+                var nav = AvanzaChartConverter.ToNormalizedNav(chart, _tz);
+                _navStore.Write(f.OrderbookId, nav);
+
+                // Read back merged series for use.
+                _navStore.TryRead(f.OrderbookId, out var merged);
+                list.Add(new NavSeries(f.Name, f.OrderbookId, merged ?? nav));
                 continue;
             }
 
-            var chart = await _avanza.GetFundChartAsync(f.OrderbookId, from, to, ct);
-            var nav = AvanzaChartConverter.ToNormalizedNav(chart, _tz);
-            _navStore.Write(f.OrderbookId, nav);
-            list.Add(new NavSeries(f.Name, f.OrderbookId, nav));
+            var chart2 = await _avanza.GetFundChartAsync(f.OrderbookId, from, to, ct);
+            var nav2 = AvanzaChartConverter.ToNormalizedNav(chart2, _tz);
+            _navStore.Write(f.OrderbookId, nav2);
+            list.Add(new NavSeries(f.Name, f.OrderbookId, nav2));
         }
 
         return list;
