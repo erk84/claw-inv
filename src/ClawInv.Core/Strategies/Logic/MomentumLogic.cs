@@ -14,21 +14,24 @@ internal sealed class MomentumLogic : IStrategyLogic
     {
         var scored = new List<(string id, double mom)>();
 
-        // Use "12-1" style momentum (skip most recent month) to reduce mean-reversion noise.
-        // We interpret LookbackMonths as the lookback window length excluding the most recent month.
+        // Impl #7: Dual momentum horizons (12-1 and 6-1 blended).
         var end = asOf.AddMonths(-1);
+        var lbLong = Math.Max(3, strat.LookbackMonths);
+        var lbShort = Math.Max(3, Math.Min(6, lbLong));
 
         foreach (var s in series)
         {
-            var r = StrategyNavHelpers.MonthlyReturn(fundIndex, s.OrderbookId, end, strat.LookbackMonths);
-            if (r is null || double.IsNaN(r.Value))
+            var rLong = StrategyNavHelpers.MonthlyReturn(fundIndex, s.OrderbookId, end, lbLong);
+            var rShort = StrategyNavHelpers.MonthlyReturn(fundIndex, s.OrderbookId, end, lbShort);
+            if (rLong is null || rShort is null) continue;
+            if (double.IsNaN(rLong.Value) || double.IsNaN(rShort.Value)) continue;
+
+            var mom = 0.5 * rLong.Value + 0.5 * rShort.Value;
+
+            if (strat.UseAbsoluteMomentumFilter && mom <= 0)
                 continue;
 
-            // absolute momentum filter: reject negative momentum
-            if (strat.UseAbsoluteMomentumFilter && r.Value <= 0)
-                continue;
-
-            scored.Add((s.OrderbookId, r.Value));
+            scored.Add((s.OrderbookId, mom));
         }
 
         var chosen = scored
