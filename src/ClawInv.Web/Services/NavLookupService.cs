@@ -1,3 +1,4 @@
+using ClawInv.Core;
 using ClawInv.Core.Backtest;
 
 namespace ClawInv.Web.Services;
@@ -14,12 +15,27 @@ public sealed class NavLookupService(IConfiguration cfg)
         if (!_store.TryRead(fundId, out var nav) || nav.Count == 0)
             return null;
 
-        var p = nav
-            .Where(p => p.Date <= date)
-            .OrderByDescending(p => p.Date)
-            .FirstOrDefault();
+        // Files are written sorted by date; use binary search and return null if no point qualifies.
+        var pts = nav as IList<NavPoint> ?? nav.ToList();
+        var lo = 0;
+        var hi = pts.Count - 1;
+        var best = -1;
 
-        return p is null ? null : p.Nav;
+        while (lo <= hi)
+        {
+            var mid = (lo + hi) / 2;
+            if (pts[mid].Date <= date)
+            {
+                best = mid;
+                lo = mid + 1;
+            }
+            else
+            {
+                hi = mid - 1;
+            }
+        }
+
+        return best >= 0 ? pts[best].Nav : null;
     }
 
     public decimal? TryGetLatestNav(string fundId)
@@ -27,6 +43,7 @@ public sealed class NavLookupService(IConfiguration cfg)
         if (!_store.TryRead(fundId, out var nav) || nav.Count == 0)
             return null;
 
-        return nav.OrderByDescending(p => p.Date).First().Nav;
+        // Nav files are sorted ascending.
+        return nav[^1].Nav;
     }
 }
