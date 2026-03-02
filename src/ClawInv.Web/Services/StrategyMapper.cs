@@ -25,13 +25,17 @@ public static class StrategyMapper
             _ => StrategyType.MomentumRotation
         };
 
+        // Important: Slots controls live holdings count.
+        // Keep cfg.TopK as a strategy-family parameter if/when we expose it separately.
+        var slots = Math.Max(1, cfg.Slots);
+
         return new StrategyDefinition(
             Id: cfg.Key,
             Name: cfg.DisplayName,
             Type: type,
             RebalanceEveryMonths: cfg.RebalanceMonths,
             LookbackMonths: cfg.LookbackMonths,
-            TopK: Math.Max(1, Math.Min(2, cfg.TopK)),
+            TopK: slots,
             Allocation: AllocationMode.EqualWeightTopK,
             UseAbsoluteMomentumFilter: cfg.UseAbsoluteMomentum,
             MovingAverageMonths: cfg.TrendMaMonths,

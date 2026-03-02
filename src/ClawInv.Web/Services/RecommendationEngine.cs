@@ -51,7 +51,8 @@ public sealed class RecommendationEngine(ILogger<RecommendationEngine> log, AppD
         var series = await nav.LoadUniverseNavAsync(from, asOfDate, ct);
 
         var def = StrategyMapper.ToStrategyDefinition(strategy);
-        var targetIds = ClawInv.Core.Backtest.MonthEndRebalanceDailyBacktester.SelectHoldingsAt(def, series, asOfDate);
+        var target = ClawInv.Core.Strategies.Logic.HoldingsSelector.Select(def, series, asOfDate);
+        var targetIds = target.Keys.ToArray();
 
         // Current "model" holdings
         var current = await db.PortfolioHoldings
