@@ -27,6 +27,8 @@ public sealed class StrategyConfig
     public int VolLookbackMonths { get; set; } = 12;
     public int TrendMaMonths { get; set; } = 12;
 
+    public string DefaultSource { get; set; } = "";
+
     // Soft-change behavior: apply parameter/slot changes at next rebalance.
     public DateTimeOffset? PendingChangesAtUtc { get; set; }
 }

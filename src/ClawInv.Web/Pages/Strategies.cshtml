@@ -1,0 +1,48 @@
+@page
+@model ClawInv.Web.Pages.StrategiesModel
+@{
+    ViewData["Title"] = "Strategier";
+}
+
+<h1>Strategier</h1>
+<p>Välj vilka strategier som ska ingå i bakgrundsjobbet. Varje strategi har sin egen portfölj.</p>
+
+<form method="post">
+    <table class="table table-sm align-middle">
+        <thead>
+            <tr>
+                <th>Aktiv</th>
+                <th>Namn</th>
+                <th>Slots</th>
+                <th>Kind</th>
+                <th>Params (kort)</th>
+                <th>Default-källa</th>
+            </tr>
+        </thead>
+        <tbody>
+        @for (var i = 0; i < Model.Items.Count; i++)
+        {
+            <tr>
+                <td>
+                    <input type="hidden" asp-for="Items[i].Id" />
+                    <input class="form-check-input" asp-for="Items[i].Enabled" />
+                </td>
+                <td>
+                    <input class="form-control form-control-sm" asp-for="Items[i].DisplayName" />
+                </td>
+                <td style="max-width: 6rem">
+                    <input class="form-control form-control-sm" asp-for="Items[i].Slots" />
+                </td>
+                <td>@Model.Items[i].Kind</td>
+                <td>
+                    LB=@Model.Items[i].LookbackMonths, Reb=@Model.Items[i].RebalanceMonths, TopK=@Model.Items[i].TopK,
+                    abs=@Model.Items[i].UseAbsoluteMomentum, lowVol=@Model.Items[i].UseLowVolFilter
+                </td>
+                <td><small class="text-muted">@Model.Items[i].DefaultSource</small></td>
+            </tr>
+        }
+        </tbody>
+    </table>
+
+    <button type="submit" class="btn btn-primary">Spara</button>
+</form>

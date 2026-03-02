@@ -25,6 +25,9 @@ using (var scope = app.Services.CreateScope())
     db.Database.EnsureCreated();
 }
 
+// Seed defaults (universe settings + strategy configs).
+await SeedData.EnsureSeededAsync(app.Services, CancellationToken.None);
+
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())
 {
