@@ -25,7 +25,6 @@ public sealed class RecommendationEngine(ILogger<RecommendationEngine> log, AppD
         var portfolio = await db.Portfolios.SingleOrDefaultAsync(p => p.StrategyConfigId == strategy.Id, ct);
         if (portfolio is null)
         {
-            // Use today as anchor. In the next step we will set this based on the first available NAV date.
             portfolio = new Portfolio
             {
                 StrategyConfigId = strategy.Id,
@@ -36,6 +35,44 @@ public sealed class RecommendationEngine(ILogger<RecommendationEngine> log, AppD
             await db.SaveChangesAsync(ct);
         }
 
+        // Load NAV with enough lookback to make selection.
+        var lookbackMonths = Math.Max(24, strategy.LookbackMonths + 24);
+        var from = asOfDate.AddMonths(-lookbackMonths);
+        var series = await nav.LoadUniverseNavAsync(from, asOfDate, ct);
+
+        return await ComputeIfDueAsync(strategy, portfolio, series, asOfDate, ct);
+    }
+
+    /// <summary>
+    /// Used by bootstrap to avoid re-loading NAV for every month-end (huge speedup).
+    /// </summary>
+    public async Task<RecommendationRun?> ComputeIfDueWithPreloadedNavAsync(int strategyConfigId, DateOnly asOfDate,
+        IReadOnlyList<ClawInv.Core.Backtest.NavSeries> preloadedSeries,
+        CancellationToken ct)
+    {
+        var strategy = await db.StrategyConfigs.SingleAsync(x => x.Id == strategyConfigId, ct);
+
+        var portfolio = await db.Portfolios.SingleOrDefaultAsync(p => p.StrategyConfigId == strategy.Id, ct);
+        if (portfolio is null)
+        {
+            portfolio = new Portfolio
+            {
+                StrategyConfigId = strategy.Id,
+                StartDate = asOfDate,
+                LastRebalanceDate = null
+            };
+            db.Portfolios.Add(portfolio);
+            await db.SaveChangesAsync(ct);
+        }
+
+        return await ComputeIfDueAsync(strategy, portfolio, preloadedSeries, asOfDate, ct);
+    }
+
+    private async Task<RecommendationRun?> ComputeIfDueAsync(StrategyConfig strategy, Portfolio portfolio,
+        IReadOnlyList<ClawInv.Core.Backtest.NavSeries> series,
+        DateOnly asOfDate,
+        CancellationToken ct)
+    {
         var anchor = portfolio.LastRebalanceDate ?? portfolio.StartDate;
         var due = RebalanceSchedule.IsRebalanceDue(asOfDate, anchor, strategy.RebalanceMonths);
 
@@ -45,16 +82,10 @@ public sealed class RecommendationEngine(ILogger<RecommendationEngine> log, AppD
             return null;
         }
 
-        // Load NAV with enough lookback to make selection.
-        var lookbackMonths = Math.Max(24, strategy.LookbackMonths + 24);
-        var from = asOfDate.AddMonths(-lookbackMonths);
-        var series = await nav.LoadUniverseNavAsync(from, asOfDate, ct);
-
         var def = StrategyMapper.ToStrategyDefinition(strategy);
         var target = ClawInv.Core.Strategies.Logic.HoldingsSelector.Select(def, series, asOfDate);
         var targetIds = target.Keys.ToArray();
 
-        // Current "model" holdings
         var current = await db.PortfolioHoldings
             .Where(h => h.PortfolioId == portfolio.Id && h.SellDate == null)
             .ToListAsync(ct);
@@ -64,7 +95,6 @@ public sealed class RecommendationEngine(ILogger<RecommendationEngine> log, AppD
 
         var trades = new List<TradeRecommendation>();
 
-        // Sells
         foreach (var h in current.Where(h => !targetSet.Contains(h.FundId)))
         {
             trades.Add(new TradeRecommendation
@@ -90,7 +120,6 @@ public sealed class RecommendationEngine(ILogger<RecommendationEngine> log, AppD
             });
         }
 
-        // Buys
         foreach (var id in targetIds.Where(id => !currentIds.Contains(id)))
         {
             var s = series.FirstOrDefault(x => x.OrderbookId == id);

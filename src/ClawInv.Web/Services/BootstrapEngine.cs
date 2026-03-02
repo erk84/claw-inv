@@ -12,7 +12,8 @@ public sealed class BootstrapEngine(
     ILogger<BootstrapEngine> log,
     AppDbContext db,
     RecommendationEngine rec,
-    SnapshotEngine snapshots)
+    SnapshotEngine snapshots,
+    NavService nav)
 {
     public async Task BootstrapLast5YearsIfEmptyAsync(int strategyConfigId, DateOnly asOf, CancellationToken ct)
     {
@@ -49,11 +50,17 @@ public sealed class BootstrapEngine(
 
         log.LogInformation("Bootstrap start: strategyId={Id} monthEnds={Count} from={From} to={To}", strategyConfigId, monthEnds.Count, from, asOf);
 
+        // Preload NAV once for the whole bootstrap window.
+        // Important: Avanza charts are "% since first datapoint" so we use a stable anchor.
+        var navAnchorFrom = new DateOnly(2021, 1, 1);
+        var preloadFrom = from < navAnchorFrom ? from : navAnchorFrom;
+        var preloaded = await nav.LoadUniverseNavAsync(preloadFrom, asOf, ct);
+
         foreach (var d in monthEnds)
         {
             ct.ThrowIfCancellationRequested();
             // This will create RecommendationRun + TradeEvents/holdings only when due.
-            await rec.ComputeIfDueAsync(strategyConfigId, d, ct);
+            await rec.ComputeIfDueWithPreloadedNavAsync(strategyConfigId, d, preloaded, ct);
         }
 
         await snapshots.RebuildLast5YearsAsync(strategyConfigId, asOf, ct);
