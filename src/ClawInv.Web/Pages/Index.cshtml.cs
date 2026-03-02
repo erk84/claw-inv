@@ -10,16 +10,19 @@ public sealed class IndexModel(AppDbContext db, NavLookupService nav) : PageMode
 {
     public List<StrategyConfig> EnabledStrategies { get; private set; } = new();
 
-    public Dictionary<int, RecommendationVm> LatestRunByStrategyId { get; private set; } = new();
+    public sealed record StrategyCardVm(
+        int StrategyId,
+        string DisplayName,
+        string Kind,
+        int Slots,
+        decimal SimulatedBalance,
+        DateOnly? LatestAsOf,
+        int ActiveHoldingsCount,
+        decimal? ActiveHoldingsPerfAvgPct);
 
-    public Dictionary<int, decimal> SimulatedBalanceByStrategyId { get; private set; } = new();
+    public List<StrategyCardVm> Cards { get; private set; } = new();
 
-    public Dictionary<int, List<HoldingVm>> ActiveHoldingsByStrategyId { get; private set; } = new();
-
-    public Dictionary<int, List<TradeRoundTripVm>> RecentTradesByStrategyId { get; private set; } = new();
-
-    public Dictionary<int, List<SnapshotVm>> SnapshotsByStrategyId { get; private set; } = new();
-
+    // Reused by Strategy details page
     public sealed record HoldingVm(
         string FundId,
         string FundName,
@@ -61,19 +64,16 @@ public sealed class IndexModel(AppDbContext db, NavLookupService nav) : PageMode
 
         var ids = EnabledStrategies.Select(x => x.Id).ToList();
 
-        // SQLite provider does not support ordering by DateTimeOffset (NotSupportedException).
-        // Load then order client-side.
+        // Latest runs (load then order client-side due to SQLite DateTimeOffset limitations)
         var runs = (await db.RecommendationRuns
-                .Include(r => r.Trades)
                 .Where(r => ids.Contains(r.StrategyConfigId))
                 .ToListAsync(ct))
             .OrderByDescending(r => r.CreatedAtUtc)
             .ToList();
 
-        // Latest run per strategy (we map to a VM later, once we have snapshots/balances).
-        var latestRunEntityByStrategyId = runs
+        var latestAsOfByStrategyId = runs
             .GroupBy(r => r.StrategyConfigId)
-            .ToDictionary(g => g.Key, g => g.First());
+            .ToDictionary(g => g.Key, g => (DateOnly?)g.First().AsOfDate);
 
         // Resolve portfolios for enabled strategies
         var portfolios = await db.Portfolios
@@ -81,90 +81,14 @@ public sealed class IndexModel(AppDbContext db, NavLookupService nav) : PageMode
             .ToListAsync(ct);
 
         var portfolioByStrategyId = portfolios.ToDictionary(p => p.StrategyConfigId, p => p);
-
-        // Active holdings
         var pids = portfolios.Select(p => p.Id).ToList();
+
+        // Active holdings for small summary
         var holdings = await db.PortfolioHoldings
             .Where(h => pids.Contains(h.PortfolioId) && h.SellDate == null)
-            .OrderBy(h => h.FundName)
             .ToListAsync(ct);
 
-        foreach (var s in EnabledStrategies)
-        {
-            if (!portfolioByStrategyId.TryGetValue(s.Id, out var p))
-            {
-                ActiveHoldingsByStrategyId[s.Id] = new();
-                RecentTradesByStrategyId[s.Id] = new();
-                continue;
-            }
-
-            var active = holdings.Where(h => h.PortfolioId == p.Id).ToList();
-            ActiveHoldingsByStrategyId[s.Id] = active
-                .Select(h =>
-                {
-                    // For "current" performance, use latest NAV in store (not as-of yesterday).
-                    var latestNav = nav.TryGetLatestNav(h.FundId);
-
-                    // Some historical rows may have BuyNav=0 (older data). Fallback to nav lookup at buy date.
-                    var buyNav = h.BuyNav > 0m ? h.BuyNav : (nav.TryGetNavAtOrBefore(h.FundId, h.BuyDate) ?? 0m);
-
-                    decimal? perf = null;
-                    if (latestNav.HasValue && buyNav > 0m)
-                        perf = (latestNav.Value / buyNav - 1m) * 100m;
-
-                    return new HoldingVm(h.FundId, h.FundName, h.BuyDate, buyNav, latestNav, perf);
-                })
-                .OrderBy(x => x.FundName)
-                .ToList();
-        }
-
-        // Trade history: show one row per holding (buy->sell) with percent performance.
-        var recentHoldings = await db.PortfolioHoldings
-            .Where(h => pids.Contains(h.PortfolioId) && h.BuyDate >= cutoff)
-            .OrderByDescending(h => h.BuyDate)
-            .ToListAsync(ct);
-
-        foreach (var s in EnabledStrategies)
-        {
-            if (!portfolioByStrategyId.TryGetValue(s.Id, out var p))
-                continue;
-
-            var rows = recentHoldings
-                .Where(h => h.PortfolioId == p.Id)
-                .Take(200)
-                .Select(h =>
-                {
-                    // Always compute performance from NAV store to avoid stale/zero stored NAV fields.
-                    // Buy NAV: at-or-before BuyDate
-                    var buyNav = nav.TryGetNavAtOrBefore(h.FundId, h.BuyDate);
-
-                    decimal? perf = null;
-                    if (buyNav is not null && buyNav.Value > 0m)
-                    {
-                        if (h.SellDate is not null)
-                        {
-                            // Sell NAV: at-or-before SellDate
-                            var sellNav = nav.TryGetNavAtOrBefore(h.FundId, h.SellDate.Value);
-                            if (sellNav is not null && sellNav.Value > 0m)
-                                perf = (sellNav.Value / buyNav.Value - 1m) * 100m;
-                        }
-                        else
-                        {
-                            // Open position: use latest NAV
-                            var latestNav = nav.TryGetLatestNav(h.FundId);
-                            if (latestNav is not null && latestNav.Value > 0m)
-                                perf = (latestNav.Value / buyNav.Value - 1m) * 100m;
-                        }
-                    }
-
-                    return new TradeRoundTripVm(h.FundId, h.FundName, h.BuyDate, h.SellDate, perf);
-                })
-                .ToList();
-
-            RecentTradesByStrategyId[s.Id] = rows;
-        }
-
-        // Snapshots last 5y (for chart)
+        // Snapshots for simulated balance (use latest point)
         var snaps = await db.PortfolioDailySnapshots
             .Where(s => pids.Contains(s.PortfolioId) && s.Date >= cutoff)
             .OrderBy(s => s.Date)
@@ -175,47 +99,40 @@ public sealed class IndexModel(AppDbContext db, NavLookupService nav) : PageMode
             if (!portfolioByStrategyId.TryGetValue(s.Id, out var p))
                 continue;
 
-            var list = snaps
-                .Where(x => x.PortfolioId == p.Id)
-                .Select(x => new SnapshotVm(x.Date, (x.EquityIndex - 1.0) * 100.0, x.EquityIndex))
+            var stratSnaps = snaps.Where(x => x.PortfolioId == p.Id).ToList();
+            var last = stratSnaps.LastOrDefault();
+            var equityIndex = last?.EquityIndex ?? 1.0;
+            var balance = 100_000m * (decimal)equityIndex;
+
+            var active = holdings.Where(h => h.PortfolioId == p.Id).ToList();
+            decimal? avgPerf = null;
+            var perfs = active
+                .Select(h =>
+                {
+                    var latestNav = nav.TryGetLatestNav(h.FundId);
+                    var buyNav = h.BuyNav > 0m ? h.BuyNav : (nav.TryGetNavAtOrBefore(h.FundId, h.BuyDate) ?? 0m);
+                    if (latestNav.HasValue && buyNav > 0m)
+                        return (decimal?)((latestNav.Value / buyNav - 1m) * 100m);
+                    return null;
+                })
+                .Where(x => x is not null)
+                .Select(x => x!.Value)
                 .ToList();
 
-            SnapshotsByStrategyId[s.Id] = list;
+            if (perfs.Count > 0)
+                avgPerf = perfs.Average();
 
-            var last = list.LastOrDefault();
-            var equityIndex = last?.EquityIndex ?? 1.0;
-            SimulatedBalanceByStrategyId[s.Id] = 100_000m * (decimal)equityIndex;
+            Cards.Add(new StrategyCardVm(
+                s.Id,
+                s.DisplayName,
+                s.Kind.ToString(),
+                s.Slots,
+                balance,
+                latestAsOfByStrategyId.GetValueOrDefault(s.Id),
+                active.Count,
+                avgPerf));
         }
 
-        // Map latest run into VM + compute simulated cash in/out per trade.
-        foreach (var s in EnabledStrategies)
-        {
-            if (!latestRunEntityByStrategyId.TryGetValue(s.Id, out var run))
-                continue;
-
-            // Use equity as-of the run date, if we have it. Otherwise assume start=100k.
-            var eqAt = SnapshotsByStrategyId.GetValueOrDefault(s.Id)
-                ?.Where(x => x.Date <= run.AsOfDate)
-                .OrderByDescending(x => x.Date)
-                .FirstOrDefault()?.EquityIndex ?? 1.0;
-
-            var balance = 100_000m * (decimal)eqAt;
-            var perSlot = s.Slots > 0 ? balance / s.Slots : balance;
-
-            var tradeVms = run.Trades.Select(t =>
-            {
-                decimal? inAmt = null;
-                decimal? outAmt = null;
-
-                if (t.Action == RecommendationAction.Buy)
-                    inAmt = perSlot;
-                else if (t.Action == RecommendationAction.Sell)
-                    outAmt = perSlot;
-
-                return new RecommendationTradeVm(t.Action, t.FundName, t.Reason, inAmt, outAmt);
-            }).ToList();
-
-            LatestRunByStrategyId[s.Id] = new RecommendationVm(run.AsOfDate, tradeVms);
-        }
+        Cards = Cards.OrderByDescending(x => x.SimulatedBalance).ToList();
     }
 }

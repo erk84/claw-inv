@@ -6,198 +6,52 @@
 
 <h1>Portföljer</h1>
 
-@if (Model.EnabledStrategies.Count == 0)
+@if (Model.Cards.Count == 0)
 {
     <p>Inga strategier är aktiva. Gå till <a asp-page="/Strategies">Strategier</a> och aktivera minst en.</p>
 }
 else
 {
-    <ul class="nav nav-tabs" role="tablist">
-    @for (var i = 0; i < Model.EnabledStrategies.Count; i++)
-    {
-        var s = Model.EnabledStrategies[i];
-        <li class="nav-item" role="presentation">
-            <button class="nav-link @(i==0?"active":"")" id="tab-@s.Id" data-bs-toggle="tab" data-bs-target="#pane-@s.Id" type="button" role="tab">
-                @s.DisplayName
-            </button>
-        </li>
-    }
-    </ul>
+    <div class="row g-3">
+        @foreach (var c in Model.Cards)
+        {
+            <div class="col-12 col-md-6 col-xl-4">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <div class="h5 mb-0">@c.DisplayName</div>
+                                <div class="text-muted"><small>@c.Kind • @c.Slots slots</small></div>
+                            </div>
+                            <div>
+                                <a class="btn btn-sm btn-outline-primary" asp-page="/Strategy" asp-route-id="@c.StrategyId">Öppna</a>
+                            </div>
+                        </div>
 
-    <div class="tab-content mt-3">
-    @for (var i = 0; i < Model.EnabledStrategies.Count; i++)
-    {
-        var s = Model.EnabledStrategies[i];
-        var r = Model.LatestRunByStrategyId.GetValueOrDefault(s.Id);
-        <div class="tab-pane fade @(i==0?"show active":"")" id="pane-@s.Id" role="tabpanel">
-            <h5>@s.DisplayName</h5>
+                        <div class="mt-3">
+                            <div class="text-muted"><small>Simulerat saldo</small></div>
+                            <div class="h4 mb-0">@c.SimulatedBalance.ToString("0") kr</div>
+                            <div class="text-muted"><small>Start 100 000 kr</small></div>
+                        </div>
 
-            <hr />
+                        <div class="mt-3 d-flex justify-content-between">
+                            <div>
+                                <div class="text-muted"><small>Aktiva innehav</small></div>
+                                <div class="fw-semibold">@c.ActiveHoldingsCount</div>
+                            </div>
+                            <div class="text-end">
+                                <div class="text-muted"><small>Snitt (aktiva)</small></div>
+                                <div class="fw-semibold">@(c.ActiveHoldingsPerfAvgPct is null ? "-" : $"{c.ActiveHoldingsPerfAvgPct:0.##}%")</div>
+                            </div>
+                        </div>
 
-            <h6>Aktiva fonder</h6>
-            @{
-                var active = Model.ActiveHoldingsByStrategyId.GetValueOrDefault(s.Id) ?? new();
-            }
-            @if (active.Count == 0)
-            {
-                <p>Inga aktiva innehav ännu.</p>
-            }
-            else
-            {
-                <table class="table table-sm">
-                    <thead><tr><th>Fond</th><th>Köpdatum</th><th>Utveckling sen köp</th></tr></thead>
-                    <tbody>
-                    @foreach (var h in active)
-                    {
-                        <tr>
-                            <td>@h.FundName</td>
-                            <td>@h.BuyDate</td>
-                            <td>@(h.PerfPct is null ? "-" : $"{h.PerfPct:0.##}%")</td>
-                        </tr>
-                    }
-                    </tbody>
-                </table>
-            }
-
-            <hr />
-
-
-            <h6>Utveckling (senaste 10 åren, %)</h6>
-            @{
-                var snaps = Model.SnapshotsByStrategyId.GetValueOrDefault(s.Id) ?? new();
-            }
-            @if (snaps.Count == 0)
-            {
-                <p>Ingen snapshot-data ännu (kör dagjobbet eller vänta till efter 02:00 UTC).</p>
-            }
-            else
-            {
-                <div style="height: 220px;">
-                    <canvas id="chart-@s.Id"></canvas>
+                        <div class="mt-3">
+                            <div class="text-muted"><small>Senaste rekommendation</small></div>
+                            <div class="fw-semibold">@(c.LatestAsOf?.ToString() ?? "-")</div>
+                        </div>
+                    </div>
                 </div>
-            }
-
-            <hr />
-
-            <h6>Historik (senaste 10 åren)</h6>
-            @{
-                var hist = Model.RecentTradesByStrategyId.GetValueOrDefault(s.Id) ?? new();
-            }
-            @if (hist.Count == 0)
-            {
-                <p>Ingen historik ännu.</p>
-            }
-            else
-            {
-                <table class="table table-sm">
-                    <thead><tr><th>Fond</th><th>Köpdatum</th><th>Säljdatum</th><th>Resultat</th></tr></thead>
-                    <tbody>
-                    @foreach (var t in hist)
-                    {
-                        <tr>
-                            <td>@t.FundName</td>
-                            <td>@t.BuyDate</td>
-                            <td>@(t.SellDate?.ToString() ?? "-")</td>
-                            <td>@(t.PerfPct is null ? "-" : $"{t.PerfPct:0.##}%")</td>
-                        </tr>
-                    }
-                    </tbody>
-                </table>
-            }
-        </div>
-    }
+            </div>
+        }
     </div>
-
-    <script src="@Url.Content("~/lib/chartjs/chart.umd.min.js")"></script>
-    <script>
-    (function () {
-        // Note: we intentionally load Chart.js from a local file to avoid CDN/CSP/network issues.
-        // Use Url.Content("~/...") so this works even when the app is hosted behind a path base/reverse proxy.
-
-        const chartConfigs = {
-            @for (var i = 0; i < Model.EnabledStrategies.Count; i++)
-            {
-                var s = Model.EnabledStrategies[i];
-                var snaps = Model.SnapshotsByStrategyId.GetValueOrDefault(s.Id) ?? new();
-                if (snaps.Count == 0) { continue; }
-
-                var cfg = new
-                {
-                    label = s.DisplayName,
-                    labels = snaps.Select(x => x.Date.ToString("yyyy-MM-dd")).ToArray(),
-                    data = snaps.Select(x => x.PerfPct).ToArray()
-                };
-
-                <text>
-                '@s.Id': @Html.Raw(System.Text.Json.JsonSerializer.Serialize(cfg)),
-                </text>
-            }
-        };
-
-        const chartsById = {};
-
-        function ensureChart(strategyId) {
-            if (chartsById[strategyId]) return;
-            const cfg = chartConfigs[strategyId];
-            if (!cfg) return;
-
-            const canvas = document.getElementById('chart-' + strategyId);
-            if (!canvas) return;
-
-            if (!window.Chart) {
-                console.warn('Chart.js not loaded');
-                canvas.insertAdjacentHTML('beforebegin', '<div class="text-danger"><small>Chart.js kunde inte laddas.</small></div>');
-                return;
-            }
-
-            // If the canvas is in a hidden tab, it may have 0 width; delay render.
-            requestAnimationFrame(() => {
-                chartsById[strategyId] = new Chart(canvas, {
-                    type: 'line',
-                    data: {
-                        labels: cfg.labels,
-                        datasets: [{
-                            label: cfg.label,
-                            data: cfg.data,
-                            borderWidth: 1,
-                            pointRadius: 0,
-                            tension: 0.05
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: { legend: { display: false } },
-                        scales: {
-                            x: { ticks: { maxTicksLimit: 6 } },
-                            y: { ticks: { callback: (v) => v + '%' } }
-                        }
-                    }
-                });
-            });
-        }
-
-        function initCharts() {
-            // Render first (active) tab chart immediately.
-            const firstTab = document.querySelector('.nav-tabs .nav-link.active');
-            if (firstTab) {
-                const id = (firstTab.getAttribute('id') || '').replace('tab-', '');
-                if (id) ensureChart(id);
-            }
-
-            // Render on tab show.
-            document.querySelectorAll('button[data-bs-toggle="tab"]').forEach(btn => {
-                btn.addEventListener('shown.bs.tab', (ev) => {
-                    const id = (ev.target.getAttribute('id') || '').replace('tab-', '');
-                    if (id) ensureChart(id);
-                });
-            });
-        }
-
-        if (document.readyState === 'loading')
-            document.addEventListener('DOMContentLoaded', initCharts);
-        else
-            initCharts();
-    })();
-    </script>
 }

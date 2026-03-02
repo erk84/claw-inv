@@ -1,0 +1,178 @@
+@page
+@model ClawInv.Web.Pages.StrategyModel
+@{
+    ViewData["Title"] = Model.Strategy is null ? "Strategi" : Model.Strategy.DisplayName;
+}
+
+@if (Model.Strategy is null)
+{
+    <h1>Strategi</h1>
+    <p>Strategi hittades inte.</p>
+    <p><a asp-page="/Index">Tillbaka</a></p>
+}
+else
+{
+    <div class="d-flex align-items-center justify-content-between">
+        <div>
+            <h1 class="mb-0">@Model.Strategy.DisplayName</h1>
+            <div class="text-muted"><small>Kind: @Model.Strategy.Kind • Slots: @Model.Strategy.Slots</small></div>
+        </div>
+        <div>
+            <a class="btn btn-sm btn-outline-secondary" asp-page="/Index">Tillbaka</a>
+        </div>
+    </div>
+
+    <hr />
+
+    <div class="row g-3">
+        <div class="col-12 col-lg-6">
+            <div class="card">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <div class="text-muted"><small>Simulerat saldo</small></div>
+                            <div class="h4 mb-0">@Model.SimulatedBalance.ToString("0") kr</div>
+                            <div class="text-muted"><small>Start 100 000 kr</small></div>
+                        </div>
+                        <div class="text-end">
+                            <div class="text-muted"><small>Senaste as-of</small></div>
+                            <div class="fw-semibold">@(Model.LatestRun?.AsOfDate.ToString() ?? "-")</div>
+                        </div>
+                    </div>
+
+                    <div class="mt-3" style="height: 240px;">
+                        @if (Model.Snapshots.Count == 0)
+                        {
+                            <div class="text-muted">Ingen snapshot-data ännu.</div>
+                        }
+                        else
+                        {
+                            <canvas id="chart"></canvas>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12 col-lg-6">
+            <div class="card">
+                <div class="card-body">
+                    <h6>Aktiva fonder</h6>
+                    @if (Model.ActiveHoldings.Count == 0)
+                    {
+                        <div class="text-muted">Inga aktiva innehav ännu.</div>
+                    }
+                    else
+                    {
+                        <table class="table table-sm mb-0">
+                            <thead><tr><th>Fond</th><th>Köpdatum</th><th class="text-end">Utveckling</th></tr></thead>
+                            <tbody>
+                            @foreach (var h in Model.ActiveHoldings)
+                            {
+                                <tr>
+                                    <td>@h.FundName</td>
+                                    <td>@h.BuyDate</td>
+                                    <td class="text-end">@(h.PerfPct is null ? "-" : $"{h.PerfPct:0.##}%")</td>
+                                </tr>
+                            }
+                            </tbody>
+                        </table>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12">
+            <div class="card">
+                <div class="card-body">
+                    <h6>Senaste rekommendation</h6>
+                    @if (Model.LatestRun is null)
+                    {
+                        <div class="text-muted">Ingen rebalance-rekommendation ännu.</div>
+                    }
+                    else
+                    {
+                        <div><strong>As-of:</strong> @Model.LatestRun.AsOfDate</div>
+
+                        @if (Model.LatestRun.Trades.Count == 0)
+                        {
+                            <div class="text-muted">Inga trades i denna körning.</div>
+                        }
+                        else
+                        {
+                            <table class="table table-sm mt-2 mb-0">
+                                <thead><tr><th>Action</th><th>Fond</th><th>Reason</th><th class="text-end">In</th><th class="text-end">Ut</th></tr></thead>
+                                <tbody>
+                                @foreach (var t in Model.LatestRun.Trades)
+                                {
+                                    <tr>
+                                        <td>@t.Action</td>
+                                        <td>@t.FundName</td>
+                                        <td>@t.Reason</td>
+                                        <td class="text-end">@(t.InAmount is null ? "-" : $"{t.InAmount.Value:0} kr")</td>
+                                        <td class="text-end">@(t.OutAmount is null ? "-" : $"{t.OutAmount.Value:0} kr")</td>
+                                    </tr>
+                                }
+                                </tbody>
+                            </table>
+                        }
+                    }
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12">
+            <div class="card">
+                <div class="card-body">
+                    <h6>Historik (senaste 10 åren)</h6>
+                    @if (Model.RecentTrades.Count == 0)
+                    {
+                        <div class="text-muted">Ingen historik ännu.</div>
+                    }
+                    else
+                    {
+                        <table class="table table-sm mb-0">
+                            <thead><tr><th>Fond</th><th>Köpdatum</th><th>Säljdatum</th><th class="text-end">Resultat</th></tr></thead>
+                            <tbody>
+                            @foreach (var t in Model.RecentTrades)
+                            {
+                                <tr>
+                                    <td>@t.FundName</td>
+                                    <td>@t.BuyDate</td>
+                                    <td>@(t.SellDate?.ToString() ?? "-")</td>
+                                    <td class="text-end">@(t.PerfPct is null ? "-" : $"{t.PerfPct:0.##}%")</td>
+                                </tr>
+                            }
+                            </tbody>
+                        </table>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @if (Model.Snapshots.Count > 0)
+    {
+        <script src="@Url.Content("~/lib/chartjs/chart.umd.min.js")"></script>
+        <script>
+        (function(){
+            const labels = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.Snapshots.Select(x => x.Date.ToString("yyyy-MM-dd")).ToArray()));
+            const data = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(Model.Snapshots.Select(x => x.PerfPct).ToArray()));
+
+            const canvas = document.getElementById('chart');
+            if (!canvas || !window.Chart) return;
+
+            new Chart(canvas, {
+                type: 'line',
+                data: { labels: labels, datasets: [{ data: data, borderWidth: 1, pointRadius: 0, tension: 0.05 }] },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: { x: { ticks: { maxTicksLimit: 6 } }, y: { ticks: { callback: (v) => v + '%' } } }
+                }
+            });
+        })();
+        </script>
+    }
+}
