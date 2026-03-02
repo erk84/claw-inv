@@ -12,13 +12,10 @@
         <thead>
             <tr>
                 <th>Aktiv</th>
-                <th>Namn</th>
+                <th>Strategi</th>
                 <th>Slots</th>
                 <th>Kind</th>
-                <th>Params (kort)</th>
-                <th>Regime</th>
-                <th>Risk-off</th>
-                <th>Default-källa</th>
+                <th>Inställningskälla</th>
             </tr>
         </thead>
         <tbody>
@@ -30,39 +27,12 @@
                     <input class="form-check-input" asp-for="Items[i].Enabled" />
                 </td>
                 <td>
-                    <input class="form-control form-control-sm" asp-for="Items[i].DisplayName" />
+                    @Model.Items[i].DisplayName
                 </td>
-                <td style="max-width: 6rem">
+                <td style="max-width: 8rem">
                     <input class="form-control form-control-sm" asp-for="Items[i].Slots" />
                 </td>
                 <td>@Model.Items[i].Kind</td>
-                <td>
-                    LB=@Model.Items[i].LookbackMonths, Reb=@Model.Items[i].RebalanceMonths, TopK=@Model.Items[i].TopK,
-                    abs=@Model.Items[i].UseAbsoluteMomentum, lowVol=@Model.Items[i].UseLowVolFilter
-                </td>
-                <td style="max-width: 14rem">
-                    <select class="form-select form-select-sm" asp-for="Items[i].Regime">
-                        <option value="0">None</option>
-                        <option value="1">IndexTrend</option>
-                        <option value="2">Breadth</option>
-                        <option value="3">IndexRsi</option>
-                    </select>
-                    <div class="mt-1">
-                        <input class="form-control form-control-sm" asp-for="Items[i].RegimeMaMonths" placeholder="MA months" />
-                    </div>
-                    <div class="mt-1">
-                        <input class="form-control form-control-sm" asp-for="Items[i].RegimeThreshold" placeholder="Threshold" />
-                    </div>
-                </td>
-                <td style="max-width: 12rem">
-                    <select class="form-select form-select-sm" asp-for="Items[i].RiskOffMode">
-                        <option value="0">Cash</option>
-                        <option value="1">DefensiveFund</option>
-                    </select>
-                    <div class="mt-1">
-                        <input class="form-control form-control-sm" asp-for="Items[i].DefensiveVolLookbackMonths" placeholder="Def vol lb" />
-                    </div>
-                </td>
                 <td><small class="text-muted">@Model.Items[i].DefaultSource</small></td>
             </tr>
         }
@@ -71,3 +41,9 @@
 
     <button type="submit" class="btn btn-primary">Spara</button>
 </form>
+
+<div class="mt-3 text-muted">
+    <small>
+        Endast <strong>Slots</strong> är konfigurerbart i UI. Övriga parametrar hålls fast i kod baserat på vad som visat sig fungera bäst i backtest.
+    </small>
+</div>

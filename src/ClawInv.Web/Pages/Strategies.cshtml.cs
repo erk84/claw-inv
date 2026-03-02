@@ -20,19 +20,6 @@ public sealed class StrategiesModel(AppDbContext db, BackgroundTaskWorker tasks)
 
         public string Kind { get; set; } = "";
 
-        public int LookbackMonths { get; set; }
-        public int RebalanceMonths { get; set; }
-        public int TopK { get; set; }
-        public bool UseAbsoluteMomentum { get; set; }
-        public bool UseLowVolFilter { get; set; }
-
-        public int Regime { get; set; }
-        public int RegimeMaMonths { get; set; }
-        public double RegimeThreshold { get; set; }
-
-        public int RiskOffMode { get; set; }
-        public int DefensiveVolLookbackMonths { get; set; }
-
         public string DefaultSource { get; set; } = "";
     }
 
@@ -47,16 +34,6 @@ public sealed class StrategiesModel(AppDbContext db, BackgroundTaskWorker tasks)
                 DisplayName = x.DisplayName,
                 Slots = x.Slots,
                 Kind = x.Kind.ToString(),
-                LookbackMonths = x.LookbackMonths,
-                RebalanceMonths = x.RebalanceMonths,
-                TopK = x.TopK,
-                UseAbsoluteMomentum = x.UseAbsoluteMomentum,
-                UseLowVolFilter = x.UseLowVolFilter,
-                Regime = (int)x.Regime,
-                RegimeMaMonths = x.RegimeMaMonths,
-                RegimeThreshold = x.RegimeThreshold,
-                RiskOffMode = (int)x.RiskOffMode,
-                DefensiveVolLookbackMonths = x.DefensiveVolLookbackMonths,
                 DefaultSource = x.DefaultSource,
             })
             .ToListAsync(ct);
@@ -75,16 +52,13 @@ public sealed class StrategiesModel(AppDbContext db, BackgroundTaskWorker tasks)
             var i = Items.Single(x => x.Id == row.Id);
 
             var wasEnabled = row.Enabled;
+            var wasSlots = row.Slots;
+
             row.Enabled = i.Enabled;
-            row.DisplayName = i.DisplayName;
             row.Slots = Math.Clamp(i.Slots, 1, 50);
 
-            row.Regime = (ClawInv.Core.Research.RegimeKind)Math.Clamp(i.Regime, 0, 3);
-            row.RegimeMaMonths = Math.Clamp(i.RegimeMaMonths, 1, 24);
-            row.RegimeThreshold = Math.Clamp(i.RegimeThreshold, -1.0, 1.0);
-
-            row.RiskOffMode = (ClawInv.Core.Strategies.RiskOffMode)Math.Clamp(i.RiskOffMode, 0, 1);
-            row.DefensiveVolLookbackMonths = Math.Clamp(i.DefensiveVolLookbackMonths, 1, 24);
+            // All other parameters are locked to code defaults ("best known" from backtests).
+            ApplyOptimalDefaults(row);
 
             if (!wasEnabled && row.Enabled)
                 newlyEnabled.Add(row.Id);
@@ -92,9 +66,9 @@ public sealed class StrategiesModel(AppDbContext db, BackgroundTaskWorker tasks)
             if (wasEnabled && !row.Enabled)
                 newlyDisabled.Add(row.Id);
 
-            // Soft-change: mark pending when settings changed.
-            // (We'll use this later in the rebalance recommendation logic.)
-            row.PendingChangesAtUtc = DateTimeOffset.UtcNow;
+            // Soft-change only when something relevant changed.
+            if (wasEnabled != row.Enabled || wasSlots != row.Slots)
+                row.PendingChangesAtUtc = DateTimeOffset.UtcNow;
         }
 
         await db.SaveChangesAsync(ct);
@@ -117,6 +91,77 @@ public sealed class StrategiesModel(AppDbContext db, BackgroundTaskWorker tasks)
         }
 
         return RedirectToPage();
+    }
+
+    private static void ApplyOptimalDefaults(Data.Entities.StrategyConfig row)
+    {
+        // These defaults represent "best known" settings from backtests/research.
+        // UI intentionally cannot modify them; only Slots is configurable.
+
+        // Reset regime/risk-off unless you explicitly want them enabled per-strategy.
+        row.Regime = ClawInv.Core.Research.RegimeKind.None;
+        row.RegimeMaMonths = 10;
+        row.RegimeThreshold = 0.0;
+        row.RiskOffMode = ClawInv.Core.Strategies.RiskOffMode.Cash;
+        row.DefensiveVolLookbackMonths = 12;
+
+        switch (row.Kind)
+        {
+            case ClawInv.Core.Research.ResearchStrategyKind.MeanReversion:
+                // Seeded from: best_MeanReversion.json (~1.305M final / 10y)
+                row.LookbackMonths = 3;
+                row.RebalanceMonths = 2;
+                row.TopK = 1;
+                row.UseAbsoluteMomentum = false;
+                row.UseLowVolFilter = false;
+                row.VolLookbackMonths = 12;
+                row.TrendMaMonths = 1;
+                row.DefaultSource = "Research: best_MeanReversion.json (~1.305M final over 10y)";
+                break;
+
+            case ClawInv.Core.Research.ResearchStrategyKind.Momentum:
+                row.LookbackMonths = 12;
+                row.RebalanceMonths = 3;
+                row.TopK = 2;
+                row.UseAbsoluteMomentum = true;
+                row.UseLowVolFilter = false;
+                row.VolLookbackMonths = 6;
+                row.TrendMaMonths = 18;
+                row.DefaultSource = "Research: best_Momentum.json (locked)";
+                break;
+
+            case ClawInv.Core.Research.ResearchStrategyKind.Trend:
+                row.LookbackMonths = 3;
+                row.RebalanceMonths = 1;
+                row.TopK = 2;
+                row.UseAbsoluteMomentum = true;
+                row.UseLowVolFilter = false;
+                row.VolLookbackMonths = 12;
+                row.TrendMaMonths = 12;
+                row.DefaultSource = "Baseline (locked)";
+                break;
+
+            case ClawInv.Core.Research.ResearchStrategyKind.LowVol:
+                row.LookbackMonths = 2;
+                row.RebalanceMonths = 2;
+                row.TopK = 2;
+                row.UseAbsoluteMomentum = false;
+                row.UseLowVolFilter = false;
+                row.VolLookbackMonths = 2;
+                row.TrendMaMonths = 1;
+                row.DefaultSource = "Baseline (locked)";
+                break;
+
+            // Other kinds: keep existing params but ensure sane values.
+            default:
+                row.LookbackMonths = Math.Clamp(row.LookbackMonths, 1, 24);
+                row.RebalanceMonths = Math.Clamp(row.RebalanceMonths, 1, 6);
+                row.TopK = Math.Clamp(row.TopK, 1, 10);
+                row.VolLookbackMonths = Math.Clamp(row.VolLookbackMonths, 1, 24);
+                row.TrendMaMonths = Math.Clamp(row.TrendMaMonths, 1, 24);
+                row.DefaultSource = string.IsNullOrWhiteSpace(row.DefaultSource) ? "Locked (unspecified)" : row.DefaultSource;
+                break;
+        }
     }
 
     private async Task ClearStrategyHistoryAsync(int strategyConfigId, CancellationToken ct)
