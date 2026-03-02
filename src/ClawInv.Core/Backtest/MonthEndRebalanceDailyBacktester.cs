@@ -72,7 +72,7 @@ public static class MonthEndRebalanceDailyBacktester
             var shouldRebalance = (mi % rebN) == 0;
             if (shouldRebalance)
             {
-                holdings = ChooseHoldings(strat, series, fundIndex, periodStart);
+                holdings = new Dictionary<string, decimal>(ClawInv.Core.Strategies.Logic.HoldingsSelector.Select(strat, series, fundIndex, periodStart));
             }
 
             // Apply daily returns from day after periodStart up to periodEnd (inclusive)

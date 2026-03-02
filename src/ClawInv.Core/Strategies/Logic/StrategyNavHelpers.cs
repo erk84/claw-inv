@@ -9,14 +9,33 @@ internal static class StrategyNavHelpers
         if (!fundIndex.TryGetValue(orderbookId, out var pts) || pts.Length == 0)
             return null;
 
-        // points are sorted ascending by date
-        for (var i = pts.Length - 1; i >= 0; i--)
+        return NavAtOrBefore(pts, date);
+    }
+
+    public static decimal? NavAtOrBefore(NavPoint[] points, DateOnly date)
+    {
+        if (points.Length == 0) return null;
+
+        // points are sorted; binary search for last <= date
+        var lo = 0;
+        var hi = points.Length - 1;
+        int best = -1;
+
+        while (lo <= hi)
         {
-            if (pts[i].Date <= date)
-                return pts[i].Nav;
+            var mid = (lo + hi) / 2;
+            if (points[mid].Date <= date)
+            {
+                best = mid;
+                lo = mid + 1;
+            }
+            else
+            {
+                hi = mid - 1;
+            }
         }
 
-        return null;
+        return best >= 0 ? points[best].Nav : null;
     }
 
     public static double? MonthlyReturn(IReadOnlyDictionary<string, NavPoint[]> fundIndex, string orderbookId, DateOnly asOf, int lookbackMonths)
