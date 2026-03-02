@@ -10,7 +10,9 @@ public sealed class IndexModel(AppDbContext db, NavLookupService nav) : PageMode
 {
     public List<StrategyConfig> EnabledStrategies { get; private set; } = new();
 
-    public Dictionary<int, RecommendationRun> LatestRunByStrategyId { get; private set; } = new();
+    public Dictionary<int, RecommendationVm> LatestRunByStrategyId { get; private set; } = new();
+
+    public Dictionary<int, decimal> SimulatedBalanceByStrategyId { get; private set; } = new();
 
     public Dictionary<int, List<HoldingVm>> ActiveHoldingsByStrategyId { get; private set; } = new();
 
@@ -34,12 +36,23 @@ public sealed class IndexModel(AppDbContext db, NavLookupService nav) : PageMode
         DateOnly? SellDate,
         decimal? PerfPct);
 
-    public sealed record SnapshotVm(DateOnly Date, double PerfPct);
+    public sealed record SnapshotVm(DateOnly Date, double PerfPct, double EquityIndex);
+
+    public sealed record RecommendationTradeVm(
+        RecommendationAction Action,
+        string FundName,
+        string Reason,
+        decimal? InAmount,
+        decimal? OutAmount);
+
+    public sealed record RecommendationVm(
+        DateOnly AsOfDate,
+        List<RecommendationTradeVm> Trades);
 
     public async Task OnGetAsync(CancellationToken ct)
     {
         var asOf = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-1));
-        var cutoff = asOf.AddYears(-5);
+        var cutoff = asOf.AddYears(-10);
 
         EnabledStrategies = await db.StrategyConfigs
             .Where(x => x.Enabled)
@@ -57,7 +70,8 @@ public sealed class IndexModel(AppDbContext db, NavLookupService nav) : PageMode
             .OrderByDescending(r => r.CreatedAtUtc)
             .ToList();
 
-        LatestRunByStrategyId = runs
+        // Latest run per strategy (we map to a VM later, once we have snapshots/balances).
+        var latestRunEntityByStrategyId = runs
             .GroupBy(r => r.StrategyConfigId)
             .ToDictionary(g => g.Key, g => g.First());
 
@@ -161,10 +175,47 @@ public sealed class IndexModel(AppDbContext db, NavLookupService nav) : PageMode
             if (!portfolioByStrategyId.TryGetValue(s.Id, out var p))
                 continue;
 
-            SnapshotsByStrategyId[s.Id] = snaps
+            var list = snaps
                 .Where(x => x.PortfolioId == p.Id)
-                .Select(x => new SnapshotVm(x.Date, (x.EquityIndex - 1.0) * 100.0))
+                .Select(x => new SnapshotVm(x.Date, (x.EquityIndex - 1.0) * 100.0, x.EquityIndex))
                 .ToList();
+
+            SnapshotsByStrategyId[s.Id] = list;
+
+            var last = list.LastOrDefault();
+            var equityIndex = last?.EquityIndex ?? 1.0;
+            SimulatedBalanceByStrategyId[s.Id] = 100_000m * (decimal)equityIndex;
+        }
+
+        // Map latest run into VM + compute simulated cash in/out per trade.
+        foreach (var s in EnabledStrategies)
+        {
+            if (!latestRunEntityByStrategyId.TryGetValue(s.Id, out var run))
+                continue;
+
+            // Use equity as-of the run date, if we have it. Otherwise assume start=100k.
+            var eqAt = SnapshotsByStrategyId.GetValueOrDefault(s.Id)
+                ?.Where(x => x.Date <= run.AsOfDate)
+                .OrderByDescending(x => x.Date)
+                .FirstOrDefault()?.EquityIndex ?? 1.0;
+
+            var balance = 100_000m * (decimal)eqAt;
+            var perSlot = s.Slots > 0 ? balance / s.Slots : balance;
+
+            var tradeVms = run.Trades.Select(t =>
+            {
+                decimal? inAmt = null;
+                decimal? outAmt = null;
+
+                if (t.Action == RecommendationAction.Buy)
+                    inAmt = perSlot;
+                else if (t.Action == RecommendationAction.Sell)
+                    outAmt = perSlot;
+
+                return new RecommendationTradeVm(t.Action, t.FundName, t.Reason, inAmt, outAmt);
+            }).ToList();
+
+            LatestRunByStrategyId[s.Id] = new RecommendationVm(run.AsOfDate, tradeVms);
         }
     }
 }

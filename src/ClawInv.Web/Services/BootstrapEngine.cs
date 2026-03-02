@@ -25,7 +25,7 @@ public sealed class BootstrapEngine(
             return;
         }
 
-        var from = asOf.AddYears(-5);
+        var from = asOf.AddYears(-10);
 
         // Ensure portfolio exists and anchors far enough back so due-check works.
         var portfolio = await db.Portfolios.SingleOrDefaultAsync(p => p.StrategyConfigId == strategyConfigId, ct);
@@ -63,7 +63,7 @@ public sealed class BootstrapEngine(
             await rec.ComputeIfDueWithPreloadedNavAsync(strategyConfigId, d, preloaded, ct);
         }
 
-        await snapshots.RebuildLast5YearsAsync(strategyConfigId, asOf, ct);
+        await snapshots.RebuildLast10YearsAsync(strategyConfigId, asOf, ct);
 
         log.LogInformation("Bootstrap done: strategyId={Id}", strategyConfigId);
     }

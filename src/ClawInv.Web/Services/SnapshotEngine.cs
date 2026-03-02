@@ -6,6 +6,7 @@ namespace ClawInv.Web.Services;
 
 /// <summary>
 /// Builds/refreshes daily portfolio equity snapshots (indexed, percent-chart friendly).
+/// (We keep 10 years to align with research/backtest horizon.)
 /// Uses the same model-portfolio assumptions as recommendations:
 /// - equal-weight holdings
 /// - rebalance only when TradeEvents occur (created by RecommendationEngine)
@@ -16,7 +17,10 @@ public sealed class SnapshotEngine(
     NavLookupService nav,
     ILogger<SnapshotEngine> log)
 {
-    public async Task RebuildLast5YearsAsync(int strategyConfigId, DateOnly asOf, CancellationToken ct)
+    public Task RebuildLast5YearsAsync(int strategyConfigId, DateOnly asOf, CancellationToken ct)
+        => RebuildLast10YearsAsync(strategyConfigId, asOf, ct);
+
+    public async Task RebuildLast10YearsAsync(int strategyConfigId, DateOnly asOf, CancellationToken ct)
     {
         var strat = await db.StrategyConfigs.FirstOrDefaultAsync(x => x.Id == strategyConfigId, ct);
         if (strat is null)
@@ -31,13 +35,13 @@ public sealed class SnapshotEngine(
             portfolio = new Portfolio
             {
                 StrategyConfigId = strategyConfigId,
-                StartDate = asOf.AddYears(-5)
+                StartDate = asOf.AddYears(-10)
             };
             db.Portfolios.Add(portfolio);
             await db.SaveChangesAsync(ct);
         }
 
-        var from = asOf.AddYears(-5);
+        var from = asOf.AddYears(-10);
         if (portfolio.StartDate > from)
             from = portfolio.StartDate;
 
