@@ -120,31 +120,26 @@ public sealed class IndexModel(AppDbContext db, NavLookupService nav) : PageMode
                 .Take(200)
                 .Select(h =>
                 {
+                    // Always compute performance from NAV store to avoid stale/zero stored NAV fields.
+                    // Buy NAV: at-or-before BuyDate
+                    var buyNav = nav.TryGetNavAtOrBefore(h.FundId, h.BuyDate);
+
                     decimal? perf = null;
-
-                    // Some historical rows may have BuyNav=0 (older data). Fallback to nav lookup at buy date.
-                    var buyNav = h.BuyNav > 0m ? h.BuyNav : (nav.TryGetNavAtOrBefore(h.FundId, h.BuyDate) ?? 0m);
-
-                    if (buyNav > 0m)
+                    if (buyNav is not null && buyNav.Value > 0m)
                     {
                         if (h.SellDate is not null)
                         {
-                            // Use sell NAV if available, otherwise fallback to nav lookup.
-                            var sellNav = h.SellNav;
-                            if (sellNav is null)
-                            {
-                                var ln = nav.TryGetNavAtOrBefore(h.FundId, h.SellDate.Value);
-                                if (ln.HasValue) sellNav = ln.Value;
-                            }
-
+                            // Sell NAV: at-or-before SellDate
+                            var sellNav = nav.TryGetNavAtOrBefore(h.FundId, h.SellDate.Value);
                             if (sellNav is not null && sellNav.Value > 0m)
-                                perf = (sellNav.Value / buyNav - 1m) * 100m;
+                                perf = (sellNav.Value / buyNav.Value - 1m) * 100m;
                         }
                         else
                         {
+                            // Open position: use latest NAV
                             var latestNav = nav.TryGetLatestNav(h.FundId);
-                            if (latestNav.HasValue && latestNav.Value > 0m)
-                                perf = (latestNav.Value / buyNav - 1m) * 100m;
+                            if (latestNav is not null && latestNav.Value > 0m)
+                                perf = (latestNav.Value / buyNav.Value - 1m) * 100m;
                         }
                     }
 
