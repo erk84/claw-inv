@@ -22,6 +22,12 @@ public sealed class StatusModel(AppDbContext db) : PageModel
         DateOnly? LatestAsOf,
         DateOnly? LatestSnapshotDate);
 
+    public DateTimeOffset? DailyJobLastRun { get; private set; }
+    public string? DailyJobLastError { get; private set; }
+
+    public DateTimeOffset? WeeklyUniverseLastRun { get; private set; }
+    public string? WeeklyUniverseLastError { get; private set; }
+
     public async Task OnGetAsync(CancellationToken ct)
     {
         Universe = await db.UniverseSettings.OrderBy(x => x.Id).FirstOrDefaultAsync(ct);
@@ -69,5 +75,13 @@ public sealed class StatusModel(AppDbContext db) : PageModel
         Jobs = await db.JobStates
             .OrderBy(x => x.Key)
             .ToListAsync(ct);
+
+        var daily = Jobs.FirstOrDefault(x => x.Key == "daily-recommendations");
+        DailyJobLastRun = daily?.LastRunAtUtc;
+        DailyJobLastError = daily?.LastError;
+
+        var weekly = Jobs.FirstOrDefault(x => x.Key == "weekly-universe");
+        WeeklyUniverseLastRun = weekly?.LastRunAtUtc;
+        WeeklyUniverseLastError = weekly?.LastError;
     }
 }

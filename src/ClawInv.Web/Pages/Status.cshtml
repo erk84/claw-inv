@@ -6,6 +6,28 @@
 
 <h1>Status</h1>
 
+<h5>Snabbstatus</h5>
+<ul>
+    <li>
+        <strong>Daily job:</strong>
+        @(Model.DailyJobLastRun?.ToString("u") ?? "-")
+        @if (!string.IsNullOrWhiteSpace(Model.DailyJobLastError))
+        {
+            <span class="text-danger">(FAILED)</span>
+        }
+    </li>
+    <li>
+        <strong>Weekly universe:</strong>
+        @(Model.WeeklyUniverseLastRun?.ToString("u") ?? "-")
+        @if (!string.IsNullOrWhiteSpace(Model.WeeklyUniverseLastError))
+        {
+            <span class="text-danger">(FAILED)</span>
+        }
+    </li>
+</ul>
+
+<hr />
+
 <h5>Universe</h5>
 @if (Model.Universe is null)
 {
