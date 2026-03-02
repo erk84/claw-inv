@@ -1,4 +1,3 @@
-using ClawInv.Core.Strategies;
 using ClawInv.Web.Data;
 using ClawInv.Web.Data.Entities;
 using Microsoft.EntityFrameworkCore;
@@ -20,18 +19,11 @@ public static class SeedData
             await db.SaveChangesAsync(ct);
         }
 
-        // Ensure all strategy kinds exist as selectable configs.
-        // We do this even if the table already has rows (upsert missing ones).
-
         // BestStrategyV1 is legacy and effectively duplicates Momentum now.
-        // Keep it in DB if it exists (for historical data), but force-disable it.
-        var legacy = await db.StrategyConfigs.SingleOrDefaultAsync(x => x.Key == "BestStrategyV1/default", ct);
-        if (legacy is not null && legacy.Enabled)
-        {
-            legacy.Enabled = false;
-            await db.SaveChangesAsync(ct);
-        }
+        // Remove it entirely if present (including dependent history).
+        await RemoveLegacyBestStrategyV1Async(db, ct);
 
+        // Ensure all strategy kinds exist as selectable configs.
         var existingKeys = await db.StrategyConfigs
             .Select(x => x.Key)
             .ToListAsync(ct);
@@ -41,9 +33,6 @@ public static class SeedData
 
         foreach (var kind in Enum.GetValues<ClawInv.Core.Research.ResearchStrategyKind>())
         {
-            // Skip legacy BestStrategyV1 row entirely (we don't want it selectable).
-            // Note: it's not an enum kind; it's a separate key.
-
             var cfg = CreateLockedDefault(kind);
             if (!keySet.Contains(cfg.Key))
                 toAdd.Add(cfg);
@@ -100,7 +89,6 @@ public static class SeedData
                 cfg.DefaultSource = "Research: best_Momentum.json (seeded)";
                 break;
 
-            // Baselines for a few common families
             case ClawInv.Core.Research.ResearchStrategyKind.Trend:
                 cfg.DisplayName = "Trend";
                 cfg.LookbackMonths = 3;
@@ -127,5 +115,47 @@ public static class SeedData
         }
 
         return cfg;
+    }
+
+    private static async Task RemoveLegacyBestStrategyV1Async(AppDbContext db, CancellationToken ct)
+    {
+        var legacy = await db.StrategyConfigs
+            .AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Key == "BestStrategyV1/default", ct);
+
+        if (legacy is null)
+            return;
+
+        var id = legacy.Id;
+
+        // Clear dependent model/history data first.
+        var portfolioIds = await db.Portfolios
+            .Where(p => p.StrategyConfigId == id)
+            .Select(p => p.Id)
+            .ToListAsync(ct);
+
+        if (portfolioIds.Count > 0)
+        {
+            await db.PortfolioDailySnapshots.Where(s => portfolioIds.Contains(s.PortfolioId)).ExecuteDeleteAsync(ct);
+            await db.TradeEvents.Where(t => portfolioIds.Contains(t.PortfolioId)).ExecuteDeleteAsync(ct);
+            await db.PortfolioHoldings.Where(h => portfolioIds.Contains(h.PortfolioId)).ExecuteDeleteAsync(ct);
+            await db.Portfolios.Where(p => portfolioIds.Contains(p.Id)).ExecuteDeleteAsync(ct);
+        }
+
+        var runIds = await db.RecommendationRuns
+            .Where(r => r.StrategyConfigId == id)
+            .Select(r => r.Id)
+            .ToListAsync(ct);
+
+        if (runIds.Count > 0)
+        {
+            await db.TradeRecommendations.Where(t => runIds.Contains(t.RecommendationRunId)).ExecuteDeleteAsync(ct);
+            await db.RecommendationRuns.Where(r => runIds.Contains(r.Id)).ExecuteDeleteAsync(ct);
+        }
+
+        await db.BackgroundTasks.Where(t => t.StrategyConfigId == id).ExecuteDeleteAsync(ct);
+
+        // Finally remove the legacy config row.
+        await db.StrategyConfigs.Where(s => s.Id == id).ExecuteDeleteAsync(ct);
     }
 }
