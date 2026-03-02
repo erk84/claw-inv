@@ -48,6 +48,48 @@ else
 
 <hr />
 
+<h5>Schemalagda jobb</h5>
+@if (Model.Jobs.Count == 0)
+{
+    <p>Inga JobStates ännu.</p>
+}
+else
+{
+    <table class="table table-sm">
+        <thead>
+            <tr>
+                <th>Key</th>
+                <th>Last run</th>
+                <th>Error</th>
+            </tr>
+        </thead>
+        <tbody>
+        @foreach (var j in Model.Jobs)
+        {
+            <tr>
+                <td>@j.Key</td>
+                <td>@(j.LastRunAtUtc?.ToString("u") ?? "-")</td>
+                <td>
+                    @if (string.IsNullOrWhiteSpace(j.LastError))
+                    {
+                        <span class="text-muted">-</span>
+                    }
+                    else
+                    {
+                        <details>
+                            <summary>error</summary>
+                            <pre style="white-space: pre-wrap;">@j.LastError</pre>
+                        </details>
+                    }
+                </td>
+            </tr>
+        }
+        </tbody>
+    </table>
+}
+
+<hr />
+
 <h5>Bakgrundsjobb (senaste 50)</h5>
 <table class="table table-sm">
     <thead>

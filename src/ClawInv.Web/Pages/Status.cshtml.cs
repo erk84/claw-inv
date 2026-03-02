@@ -13,6 +13,8 @@ public sealed class StatusModel(AppDbContext db) : PageModel
 
     public List<BackgroundTask> RecentTasks { get; private set; } = new();
 
+    public List<JobState> Jobs { get; private set; } = new();
+
     public sealed record Row(
         string Key,
         string Name,
@@ -62,6 +64,10 @@ public sealed class StatusModel(AppDbContext db) : PageModel
         RecentTasks = await db.BackgroundTasks
             .OrderByDescending(t => t.CreatedAtUtc)
             .Take(50)
+            .ToListAsync(ct);
+
+        Jobs = await db.JobStates
+            .OrderBy(x => x.Key)
             .ToListAsync(ct);
     }
 }
