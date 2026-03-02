@@ -1,15 +1,22 @@
+using ClawInv.Core.Avanza;
+using ClawInv.Core.Backtest;
+using ClawInv.Core.Infrastructure;
 using ClawInv.Web.Data;
 using ClawInv.Web.Data.Entities;
 using Microsoft.EntityFrameworkCore;
 
 namespace ClawInv.Web.Services;
 
-public sealed class UniverseRegenerator(ILogger<UniverseRegenerator> log, AppDbContext db)
+public sealed class UniverseRegenerator(
+    ILogger<UniverseRegenerator> log,
+    IConfiguration cfg,
+    IServiceScopeFactory scopeFactory)
 {
-    // NOTE: this is a placeholder for wiring to the same universe-generation logic as the CLI.
-    // For now we only persist settings timestamps and counts.
     public async Task RegenerateAsync(CancellationToken ct)
     {
+        using var scope = scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
         var settings = await db.UniverseSettings.SingleOrDefaultAsync(x => x.Key == "default", ct);
         if (settings is null)
         {
@@ -17,14 +24,34 @@ public sealed class UniverseRegenerator(ILogger<UniverseRegenerator> log, AppDbC
             db.UniverseSettings.Add(settings);
         }
 
-        // TODO: call into ClawInv.Core/Cli universe generation logic and write to disk + update count.
-        log.LogInformation("Regenerating universe with filters: rating<= {RatingLimit}, fee<= {FeeLimit}, risk<= {RiskLimit}",
+        var cacheDir = cfg["ClawInv:CacheDir"] ?? "data/avanza-cache";
+        var universePath = cfg["ClawInv:UniversePath"] ?? "data/universe.json";
+
+        Directory.CreateDirectory(cacheDir);
+        Directory.CreateDirectory(Path.GetDirectoryName(universePath) ?? ".");
+
+        log.LogInformation(
+            "Regenerating universe: rating>={RatingLimit}, totalFee<={FeeLimit}, risk>={RiskLimit} (no max count)",
             settings.RatingLimit, settings.TotalFeeLimit, settings.RiskLimit);
 
+        using var http = new HttpClient();
+        var cache = new SimpleDiskCache(cacheDir);
+        var avanza = new AvanzaClient(http, cache);
+
+        var gen = new UniverseGenerator(avanza);
+        var universe = await gen.GenerateAllFromFundListAsync(
+            settings.RatingLimit,
+            settings.TotalFeeLimit,
+            settings.RiskLimit,
+            ct);
+
+        UniverseWriter.Save(universe, universePath);
+
         settings.LastRegeneratedAtUtc = DateTimeOffset.UtcNow;
-        // placeholder until we generate the actual list.
-        settings.UniverseFundCount = settings.UniverseFundCount;
+        settings.UniverseFundCount = universe.Funds.Count;
 
         await db.SaveChangesAsync(ct);
+
+        log.LogInformation("Universe regenerated: {Count} funds written to {Path}", universe.Funds.Count, universePath);
     }
 }

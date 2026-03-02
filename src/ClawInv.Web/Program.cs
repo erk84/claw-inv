@@ -13,7 +13,7 @@ Directory.CreateDirectory(Path.GetDirectoryName(dbPath) ?? ".");
 builder.Services.AddDbContext<AppDbContext>(o =>
     o.UseSqlite($"Data Source={dbPath}"));
 
-builder.Services.AddScoped<UniverseRegenerator>();
+builder.Services.AddSingleton<UniverseRegenerator>();
 builder.Services.AddHostedService<ScheduledJobsService>();
 
 var app = builder.Build();
