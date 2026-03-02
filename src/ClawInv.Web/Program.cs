@@ -10,8 +10,10 @@ builder.Services.AddRazorPages();
 var dbPath = builder.Configuration["ClawInv:DbPath"] ?? "data/clawinv.db";
 Directory.CreateDirectory(Path.GetDirectoryName(dbPath) ?? ".");
 
+var connString = $"Data Source={dbPath}";
+
 builder.Services.AddDbContext<AppDbContext>(o =>
-    o.UseSqlite($"Data Source={dbPath}"));
+    o.UseSqlite(connString));
 
 builder.Services.AddSingleton<UniverseRegenerator>();
 builder.Services.AddHostedService<ScheduledJobsService>();
@@ -24,6 +26,9 @@ using (var scope = app.Services.CreateScope())
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     db.Database.EnsureCreated();
 }
+
+// Patch older SQLite DBs created before certain columns existed.
+SchemaUpgrader.Upgrade(connString);
 
 // Seed defaults (universe settings + strategy configs).
 await SeedData.EnsureSeededAsync(app.Services, CancellationToken.None);
