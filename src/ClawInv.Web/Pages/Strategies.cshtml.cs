@@ -26,6 +26,7 @@ public sealed class StrategiesModel(AppDbContext db, BackgroundTaskWorker tasks)
     public async Task OnGetAsync(CancellationToken ct)
     {
         Items = await db.StrategyConfigs
+            .Where(x => x.Key != "BestStrategyV1/default")
             .OrderBy(x => x.DisplayName)
             .Select(x => new Item
             {

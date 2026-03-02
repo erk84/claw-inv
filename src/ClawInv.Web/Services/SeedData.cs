@@ -20,104 +20,112 @@ public static class SeedData
             await db.SaveChangesAsync(ct);
         }
 
-        if (await db.StrategyConfigs.AnyAsync(ct))
-            return;
+        // Ensure all strategy kinds exist as selectable configs.
+        // We do this even if the table already has rows (upsert missing ones).
 
-        // Seed strategy configs. Default: disabled and slots=2.
-        // Sources are displayed in UI so you can see where defaults come from.
-        var list = new List<StrategyConfig>();
-
-        // From BestStrategies.cs (legacy best_v1)
-        var v1 = BestStrategies.BestStrategyV1;
-        list.Add(new StrategyConfig
+        // BestStrategyV1 is legacy and effectively duplicates Momentum now.
+        // Keep it in DB if it exists (for historical data), but force-disable it.
+        var legacy = await db.StrategyConfigs.SingleOrDefaultAsync(x => x.Key == "BestStrategyV1/default", ct);
+        if (legacy is not null && legacy.Enabled)
         {
-            Key = "BestStrategyV1/default",
-            DisplayName = v1.Name,
-            Enabled = false,
-            Slots = v1.TopK,
-            Kind = ClawInv.Core.Research.ResearchStrategyKind.Momentum,
-            LookbackMonths = v1.LookbackMonths,
-            RebalanceMonths = v1.RebalanceEveryMonths,
-            TopK = v1.TopK,
-            UseAbsoluteMomentum = v1.UseAbsoluteMomentumFilter,
-            UseLowVolFilter = v1.UseLowVolFilter,
-            VolLookbackMonths = v1.VolatilityLookbackMonths,
-            TrendMaMonths = Math.Max(1, v1.MovingAverageMonths),
-            DefaultSource = "BestStrategies.cs: BestStrategyV1",
-        });
+            legacy.Enabled = false;
+            await db.SaveChangesAsync(ct);
+        }
 
-        // From research best (10y final-cap runs): MeanReversion ~1.305M
-        list.Add(new StrategyConfig
-        {
-            Key = "MeanReversion/research-final-10y",
-            DisplayName = "MeanReversion (research default)",
-            Enabled = false,
-            Slots = 2, // user default; live slots are configurable
-            Kind = ClawInv.Core.Research.ResearchStrategyKind.MeanReversion,
-            LookbackMonths = 3,
-            RebalanceMonths = 2,
-            TopK = 1,
-            UseAbsoluteMomentum = false,
-            UseLowVolFilter = false,
-            VolLookbackMonths = 12,
-            TrendMaMonths = 1,
-            DefaultSource = "Research: best_MeanReversion.json (~1.305M final over 10y)",
-        });
+        var existingKeys = await db.StrategyConfigs
+            .Select(x => x.Key)
+            .ToListAsync(ct);
+        var keySet = existingKeys.ToHashSet(StringComparer.Ordinal);
 
-        // Add a few baseline configs for other kinds (disabled). These are safe starting points;
-        // they'll be tuned later via UI and/or research.
-        list.Add(new StrategyConfig
+        var toAdd = new List<StrategyConfig>();
+
+        foreach (var kind in Enum.GetValues<ClawInv.Core.Research.ResearchStrategyKind>())
         {
-            Key = "Momentum/research-default",
-            DisplayName = "Momentum (research default)",
+            // Skip legacy BestStrategyV1 row entirely (we don't want it selectable).
+            // Note: it's not an enum kind; it's a separate key.
+
+            var cfg = CreateLockedDefault(kind);
+            if (!keySet.Contains(cfg.Key))
+                toAdd.Add(cfg);
+        }
+
+        if (toAdd.Count > 0)
+        {
+            db.StrategyConfigs.AddRange(toAdd);
+            await db.SaveChangesAsync(ct);
+        }
+    }
+
+    private static StrategyConfig CreateLockedDefault(ClawInv.Core.Research.ResearchStrategyKind kind)
+    {
+        // Default: disabled and slots=2 (user-configurable).
+        // All other params are locked by Strategies page save logic.
+
+        var cfg = new StrategyConfig
+        {
+            Key = $"{kind}/default",
+            DisplayName = kind.ToString(),
             Enabled = false,
             Slots = 2,
-            Kind = ClawInv.Core.Research.ResearchStrategyKind.Momentum,
-            LookbackMonths = 12,
-            RebalanceMonths = 3,
-            TopK = 2,
-            UseAbsoluteMomentum = true,
-            UseLowVolFilter = false,
-            VolLookbackMonths = 6,
-            TrendMaMonths = 18,
-            DefaultSource = "Research: best_Momentum.json (seeded)",
-        });
+            Kind = kind,
+            DefaultSource = "Locked defaults (seed)",
+        };
 
-        list.Add(new StrategyConfig
+        // Provide best-known defaults for a few important kinds.
+        switch (kind)
         {
-            Key = "Trend/default",
-            DisplayName = "Trend (default)",
-            Enabled = false,
-            Slots = 2,
-            Kind = ClawInv.Core.Research.ResearchStrategyKind.Trend,
-            LookbackMonths = 3,
-            RebalanceMonths = 1,
-            TopK = 2,
-            UseAbsoluteMomentum = true,
-            UseLowVolFilter = false,
-            VolLookbackMonths = 12,
-            TrendMaMonths = 1,
-            DefaultSource = "Baseline defaults",
-        });
+            case ClawInv.Core.Research.ResearchStrategyKind.MeanReversion:
+                cfg.Key = "MeanReversion/research-final-10y";
+                cfg.DisplayName = "MeanReversion";
+                cfg.LookbackMonths = 3;
+                cfg.RebalanceMonths = 2;
+                cfg.TopK = 1;
+                cfg.UseAbsoluteMomentum = false;
+                cfg.UseLowVolFilter = false;
+                cfg.VolLookbackMonths = 12;
+                cfg.TrendMaMonths = 1;
+                cfg.DefaultSource = "Research: best_MeanReversion.json (~1.305M final over 10y)";
+                break;
 
-        list.Add(new StrategyConfig
-        {
-            Key = "LowVol/default",
-            DisplayName = "LowVol (default)",
-            Enabled = false,
-            Slots = 2,
-            Kind = ClawInv.Core.Research.ResearchStrategyKind.LowVol,
-            LookbackMonths = 2,
-            RebalanceMonths = 2,
-            TopK = 2,
-            UseAbsoluteMomentum = false,
-            UseLowVolFilter = false,
-            VolLookbackMonths = 2,
-            TrendMaMonths = 1,
-            DefaultSource = "Baseline defaults",
-        });
+            case ClawInv.Core.Research.ResearchStrategyKind.Momentum:
+                cfg.Key = "Momentum/research-default";
+                cfg.DisplayName = "Momentum";
+                cfg.LookbackMonths = 12;
+                cfg.RebalanceMonths = 3;
+                cfg.TopK = 2;
+                cfg.UseAbsoluteMomentum = true;
+                cfg.UseLowVolFilter = false;
+                cfg.VolLookbackMonths = 6;
+                cfg.TrendMaMonths = 18;
+                cfg.DefaultSource = "Research: best_Momentum.json (seeded)";
+                break;
 
-        db.StrategyConfigs.AddRange(list);
-        await db.SaveChangesAsync(ct);
+            // Baselines for a few common families
+            case ClawInv.Core.Research.ResearchStrategyKind.Trend:
+                cfg.DisplayName = "Trend";
+                cfg.LookbackMonths = 3;
+                cfg.RebalanceMonths = 1;
+                cfg.TopK = 2;
+                cfg.UseAbsoluteMomentum = true;
+                cfg.UseLowVolFilter = false;
+                cfg.VolLookbackMonths = 12;
+                cfg.TrendMaMonths = 12;
+                cfg.DefaultSource = "Baseline defaults";
+                break;
+
+            case ClawInv.Core.Research.ResearchStrategyKind.LowVol:
+                cfg.DisplayName = "LowVol";
+                cfg.LookbackMonths = 2;
+                cfg.RebalanceMonths = 2;
+                cfg.TopK = 2;
+                cfg.UseAbsoluteMomentum = false;
+                cfg.UseLowVolFilter = false;
+                cfg.VolLookbackMonths = 2;
+                cfg.TrendMaMonths = 1;
+                cfg.DefaultSource = "Baseline defaults";
+                break;
+        }
+
+        return cfg;
     }
 }
