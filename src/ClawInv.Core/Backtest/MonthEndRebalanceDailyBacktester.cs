@@ -16,11 +16,7 @@ public static class MonthEndRebalanceDailyBacktester
         IReadOnlyList<NavSeries> series,
         DateOnly asOf)
     {
-        if (strat.TopK > 2)
-            throw new ArgumentException("MonthEndRebalanceDailyBacktester supports TopK<=2.");
-
-        var fundIndex = series.ToDictionary(s => s.OrderbookId, s => s.Points.OrderBy(p => p.Date).ToArray());
-        var holdings = ChooseHoldings(strat, series, fundIndex, asOf);
+        var holdings = ClawInv.Core.Strategies.Logic.HoldingsSelector.Select(strat, series, asOf);
         return holdings.Keys.OrderBy(x => x).ToArray();
     }
 
