@@ -89,11 +89,15 @@ public sealed class IndexModel(AppDbContext db, NavLookupService nav) : PageMode
                 .Select(h =>
                 {
                     var latestNav = nav.TryGetNavAtOrBefore(h.FundId, asOf);
-                    decimal? perf = null;
-                    if (latestNav.HasValue && h.BuyNav > 0)
-                        perf = (latestNav.Value / h.BuyNav - 1m) * 100m;
 
-                    return new HoldingVm(h.FundId, h.FundName, h.BuyDate, h.BuyNav, latestNav, perf);
+                    // Some historical rows may have BuyNav=0 (older data). Fallback to nav lookup at buy date.
+                    var buyNav = h.BuyNav > 0m ? h.BuyNav : (nav.TryGetNavAtOrBefore(h.FundId, h.BuyDate) ?? 0m);
+
+                    decimal? perf = null;
+                    if (latestNav.HasValue && buyNav > 0m)
+                        perf = (latestNav.Value / buyNav - 1m) * 100m;
+
+                    return new HoldingVm(h.FundId, h.FundName, h.BuyDate, buyNav, latestNav, perf);
                 })
                 .OrderBy(x => x.FundName)
                 .ToList();
@@ -117,7 +121,10 @@ public sealed class IndexModel(AppDbContext db, NavLookupService nav) : PageMode
                 {
                     decimal? perf = null;
 
-                    if (h.BuyNav > 0m)
+                    // Some historical rows may have BuyNav=0 (older data). Fallback to nav lookup at buy date.
+                    var buyNav = h.BuyNav > 0m ? h.BuyNav : (nav.TryGetNavAtOrBefore(h.FundId, h.BuyDate) ?? 0m);
+
+                    if (buyNav > 0m)
                     {
                         if (h.SellDate is not null)
                         {
@@ -130,13 +137,13 @@ public sealed class IndexModel(AppDbContext db, NavLookupService nav) : PageMode
                             }
 
                             if (sellNav is not null && sellNav.Value > 0m)
-                                perf = (sellNav.Value / h.BuyNav - 1m) * 100m;
+                                perf = (sellNav.Value / buyNav - 1m) * 100m;
                         }
                         else
                         {
                             var latestNav = nav.TryGetNavAtOrBefore(h.FundId, asOf);
                             if (latestNav.HasValue && latestNav.Value > 0m)
-                                perf = (latestNav.Value / h.BuyNav - 1m) * 100m;
+                                perf = (latestNav.Value / buyNav - 1m) * 100m;
                         }
                     }
 
