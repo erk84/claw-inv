@@ -103,6 +103,23 @@ else
 
             <hr />
 
+            <h6>Utveckling (senaste 5 åren, %)</h6>
+            @{
+                var snaps = Model.SnapshotsByStrategyId.GetValueOrDefault(s.Id) ?? new();
+            }
+            @if (snaps.Count == 0)
+            {
+                <p>Ingen snapshot-data ännu (kör dagjobbet eller vänta till efter 02:00 UTC).</p>
+            }
+            else
+            {
+                <div style="height: 220px;">
+                    <canvas id="chart-@s.Id"></canvas>
+                </div>
+            }
+
+            <hr />
+
             <h6>Historik (senaste 5 åren)</h6>
             @{
                 var hist = Model.RecentTradesByStrategyId.GetValueOrDefault(s.Id) ?? new();
@@ -131,4 +148,50 @@ else
         </div>
     }
     </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script>
+    (function () {
+        const charts = [];
+        @for (var i = 0; i < Model.EnabledStrategies.Count; i++)
+        {
+            var s = Model.EnabledStrategies[i];
+            var snaps = Model.SnapshotsByStrategyId.GetValueOrDefault(s.Id) ?? new();
+            if (snaps.Count == 0) { continue; }
+
+            <text>
+            {
+                const ctx = document.getElementById('chart-@s.Id');
+                if (!ctx) return;
+
+                const labels = [@string.Join(",", snaps.Select(x => $"'{x.Date:yyyy-MM-dd}'"))];
+                const data = [@string.Join(",", snaps.Select(x => x.PerfPct.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture)))];
+
+                charts.push(new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: '@s.DisplayName',
+                            data: data,
+                            borderWidth: 1,
+                            pointRadius: 0,
+                            tension: 0.05
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { display: false } },
+                        scales: {
+                            x: { ticks: { maxTicksLimit: 6 } },
+                            y: { ticks: { callback: (v) => v + '%' } }
+                        }
+                    }
+                }));
+            }
+            </text>
+        }
+    })();
+    </script>
 }

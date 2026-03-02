@@ -16,6 +16,8 @@ public sealed class IndexModel(AppDbContext db, NavLookupService nav) : PageMode
 
     public Dictionary<int, List<TradeVm>> RecentTradesByStrategyId { get; private set; } = new();
 
+    public Dictionary<int, List<SnapshotVm>> SnapshotsByStrategyId { get; private set; } = new();
+
     public sealed record HoldingVm(
         string FundId,
         string FundName,
@@ -26,6 +28,8 @@ public sealed class IndexModel(AppDbContext db, NavLookupService nav) : PageMode
     );
 
     public sealed record TradeVm(DateOnly Date, string FundName, string Side, decimal Nav);
+
+    public sealed record SnapshotVm(DateOnly Date, double PerfPct);
 
     public async Task OnGetAsync(CancellationToken ct)
     {
@@ -102,6 +106,23 @@ public sealed class IndexModel(AppDbContext db, NavLookupService nav) : PageMode
                 .Where(t => t.PortfolioId == p.Id)
                 .Take(200)
                 .Select(t => new TradeVm(t.Date, t.FundName, t.Side.ToString(), t.Nav))
+                .ToList();
+        }
+
+        // Snapshots last 5y (for chart)
+        var snaps = await db.PortfolioDailySnapshots
+            .Where(s => pids.Contains(s.PortfolioId) && s.Date >= cutoff)
+            .OrderBy(s => s.Date)
+            .ToListAsync(ct);
+
+        foreach (var s in EnabledStrategies)
+        {
+            if (!portfolioByStrategyId.TryGetValue(s.Id, out var p))
+                continue;
+
+            SnapshotsByStrategyId[s.Id] = snaps
+                .Where(x => x.PortfolioId == p.Id)
+                .Select(x => new SnapshotVm(x.Date, (x.EquityIndex - 1.0) * 100.0))
                 .ToList();
         }
     }
