@@ -33,6 +33,9 @@ app.Configure(cfg =>
     cfg.AddCommand<ClawInv.Cli.TraceCommand>("trace")
         .WithDescription("Trace month-end transactions for a best-strategy JSON (outputs CSV)." );
 
+    cfg.AddCommand<BacktestStrategyCommand>("backtest-strategy")
+        .WithDescription("Backtest a StrategyDefinition using the live selector logic (month-end rebalance, daily engine)." );
+
     cfg.AddCommand<GenUniverseCommand>("gen-universe")
         .WithDescription("Generate a universe file by sampling Avanza search results (rate limited)." );
 });
