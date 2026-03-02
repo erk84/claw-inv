@@ -12,8 +12,8 @@ internal sealed class MeanReversionLogic : IStrategyLogic
         IReadOnlyDictionary<string, NavPoint[]> fundIndex,
         DateOnly asOf)
     {
-        // Mean reversion: dual-timeframe deviation-from-mean.
-        // Principle: use a short-term mean for sensitivity and a longer-term mean for robustness.
+        // Mean reversion in an uptrend: short-term reversal + long-term momentum context.
+        // Score = 1M return - 0.3 * 12M return (more negative = recent pullback within stronger trend).
         var scored = new List<(string id, double score)>();
 
         var maShort = Math.Max(2, strat.LookbackMonths);
@@ -33,12 +33,12 @@ internal sealed class MeanReversionLogic : IStrategyLogic
                 if (endNav.Value < maNavGate.Value) continue;
             }
 
-            var devShort = DeviationFromMa(pts, asOf, maShort);
-            var devLong = DeviationFromMa(pts, asOf, maLong);
-            if (devShort is null || devLong is null) continue;
+            var r1 = MonthlyReturn(pts, asOf, 1);
+            var r12 = MonthlyReturn(pts, asOf, 12);
+            if (r1 is null || r12 is null) continue;
 
-            // Weighted combo: emphasize short-term, keep long-term context.
-            var score = devShort.Value + 0.5 * devLong.Value;
+            // More negative => worse recent month but strong 12M trend => classic pullback-in-uptrend setup
+            var score = r1.Value - 0.3 * r12.Value;
             scored.Add((s.OrderbookId, score));
         }
 
@@ -61,6 +61,16 @@ internal sealed class MeanReversionLogic : IStrategyLogic
         var ma = MovingAverageNav(points, end, months);
         if (navNow is null || ma is null || ma.Value <= 0m) return null;
         return (double)(navNow.Value / ma.Value - 1m);
+    }
+
+    private static double? MonthlyReturn(NavPoint[] points, DateOnly end, int months)
+    {
+        if (months <= 0) return null;
+        var a = StrategyNavHelpers.NavAtOrBefore(points, end.AddMonths(-months));
+        var b = StrategyNavHelpers.NavAtOrBefore(points, end);
+        if (a is null || b is null) return null;
+        if (a.Value <= 0m) return null;
+        return (double)(b.Value / a.Value - 1m);
     }
 
     private static decimal? MovingAverageNav(NavPoint[] points, DateOnly end, int months)
