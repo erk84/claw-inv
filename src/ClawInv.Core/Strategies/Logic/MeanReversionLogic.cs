@@ -12,11 +12,12 @@ internal sealed class MeanReversionLogic : IStrategyLogic
         IReadOnlyDictionary<string, NavPoint[]> fundIndex,
         DateOnly asOf)
     {
-        // Mean reversion: pick assets that are far below a moving average (deviation-from-mean).
-        // This is a common MR principle: reversion toward a smoothed mean.
-        var scored = new List<(string id, double dev)>();
+        // Mean reversion: dual-timeframe deviation-from-mean.
+        // Principle: use a short-term mean for sensitivity and a longer-term mean for robustness.
+        var scored = new List<(string id, double score)>();
 
-        var maMonths = Math.Max(2, strat.LookbackMonths);
+        var maShort = Math.Max(2, strat.LookbackMonths);
+        var maLong = Math.Max(maShort + 2, maShort * 2);
 
         foreach (var s in series)
         {
@@ -32,17 +33,17 @@ internal sealed class MeanReversionLogic : IStrategyLogic
                 if (endNav.Value < maNavGate.Value) continue;
             }
 
-            var navNow = StrategyNavHelpers.NavAtOrBefore(pts, asOf);
-            var ma = MovingAverageNav(pts, asOf, maMonths);
-            if (navNow is null || ma is null || ma.Value <= 0m) continue;
+            var devShort = DeviationFromMa(pts, asOf, maShort);
+            var devLong = DeviationFromMa(pts, asOf, maLong);
+            if (devShort is null || devLong is null) continue;
 
-            // Deviation: current / MA - 1 (more negative = more oversold)
-            var dev = (double)(navNow.Value / ma.Value - 1m);
-            scored.Add((s.OrderbookId, dev));
+            // Weighted combo: emphasize short-term, keep long-term context.
+            var score = devShort.Value + 0.5 * devLong.Value;
+            scored.Add((s.OrderbookId, score));
         }
 
         var chosen = scored
-            .OrderBy(x => x.dev)
+            .OrderBy(x => x.score)
             .Take(Math.Max(1, strat.TopK))
             .Select(x => x.id)
             .ToArray();
@@ -52,6 +53,14 @@ internal sealed class MeanReversionLogic : IStrategyLogic
 
         var w = 1.0m / chosen.Length;
         return chosen.ToDictionary(x => x, _ => w);
+    }
+
+    private static double? DeviationFromMa(NavPoint[] points, DateOnly end, int months)
+    {
+        var navNow = StrategyNavHelpers.NavAtOrBefore(points, end);
+        var ma = MovingAverageNav(points, end, months);
+        if (navNow is null || ma is null || ma.Value <= 0m) return null;
+        return (double)(navNow.Value / ma.Value - 1m);
     }
 
     private static decimal? MovingAverageNav(NavPoint[] points, DateOnly end, int months)
