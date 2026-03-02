@@ -12,34 +12,37 @@ internal sealed class MeanReversionLogic : IStrategyLogic
         IReadOnlyDictionary<string, NavPoint[]> fundIndex,
         DateOnly asOf)
     {
-        // Mean reversion: pick assets that are most drawn down from a recent peak.
-        // This can be more robust than just last month's return.
-        var scored = new List<(string id, double dd)>();
+        // Mean reversion: pick assets that are far below a moving average (deviation-from-mean).
+        // This is a common MR principle: reversion toward a smoothed mean.
+        var scored = new List<(string id, double dev)>();
 
-        var windowMonths = Math.Max(3, strat.LookbackMonths);
+        var maMonths = Math.Max(2, strat.LookbackMonths);
 
         foreach (var s in series)
         {
             if (!fundIndex.TryGetValue(s.OrderbookId, out var pts))
                 continue;
 
+            // Optional trend gate still applies if configured.
             if (strat.MovingAverageMonths > 0)
             {
                 var endNav = StrategyNavHelpers.NavAtOrBefore(pts, asOf);
-                var maNav = StrategyNavHelpers.NavAtOrBefore(pts, asOf.AddMonths(-Math.Max(1, strat.MovingAverageMonths)));
-                if (endNav is null || maNav is null || maNav <= 0m) continue;
-                if (endNav.Value < maNav.Value) continue;
+                var maNavGate = StrategyNavHelpers.NavAtOrBefore(pts, asOf.AddMonths(-Math.Max(1, strat.MovingAverageMonths)));
+                if (endNav is null || maNavGate is null || maNavGate <= 0m) continue;
+                if (endNav.Value < maNavGate.Value) continue;
             }
 
-            var dd = DrawdownFromRecentHigh(pts, asOf, windowMonths);
-            if (dd is null || double.IsNaN(dd.Value))
-                continue;
+            var navNow = StrategyNavHelpers.NavAtOrBefore(pts, asOf);
+            var ma = MovingAverageNav(pts, asOf, maMonths);
+            if (navNow is null || ma is null || ma.Value <= 0m) continue;
 
-            scored.Add((s.OrderbookId, dd.Value));
+            // Deviation: current / MA - 1 (more negative = more oversold)
+            var dev = (double)(navNow.Value / ma.Value - 1m);
+            scored.Add((s.OrderbookId, dev));
         }
 
         var chosen = scored
-            .OrderBy(x => x.dd) // most negative drawdown = most beaten down
+            .OrderBy(x => x.dev)
             .Take(Math.Max(1, strat.TopK))
             .Select(x => x.id)
             .ToArray();
@@ -51,21 +54,19 @@ internal sealed class MeanReversionLogic : IStrategyLogic
         return chosen.ToDictionary(x => x, _ => w);
     }
 
-    private static double? DrawdownFromRecentHigh(NavPoint[] points, DateOnly t, int windowMonths)
+    private static decimal? MovingAverageNav(NavPoint[] points, DateOnly end, int months)
     {
-        var navNow = StrategyNavHelpers.NavAtOrBefore(points, t);
-        if (navNow is null || navNow.Value <= 0m) return null;
-
-        decimal peak = 0m;
-        for (var i = 0; i <= windowMonths; i++)
+        if (months <= 0) return null;
+        decimal sum = 0m;
+        var n = 0;
+        for (var i = 0; i <= months; i++)
         {
-            var d = t.AddMonths(-i);
-            var v = StrategyNavHelpers.NavAtOrBefore(points, d);
-            if (v is null) continue;
-            if (v.Value > peak) peak = v.Value;
+            var d = end.AddMonths(-i);
+            var p = StrategyNavHelpers.NavAtOrBefore(points, d);
+            if (p is null) continue;
+            sum += p.Value;
+            n++;
         }
-
-        if (peak <= 0m) return null;
-        return (double)(navNow.Value / peak - 1m);
+        return n > 0 ? sum / n : null;
     }
 }
