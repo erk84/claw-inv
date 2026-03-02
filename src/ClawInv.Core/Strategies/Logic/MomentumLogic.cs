@@ -14,9 +14,13 @@ internal sealed class MomentumLogic : IStrategyLogic
     {
         var scored = new List<(string id, double mom)>();
 
+        // Use "12-1" style momentum (skip most recent month) to reduce mean-reversion noise.
+        // We interpret LookbackMonths as the lookback window length excluding the most recent month.
+        var end = asOf.AddMonths(-1);
+
         foreach (var s in series)
         {
-            var r = StrategyNavHelpers.MonthlyReturn(fundIndex, s.OrderbookId, asOf, strat.LookbackMonths);
+            var r = StrategyNavHelpers.MonthlyReturn(fundIndex, s.OrderbookId, end, strat.LookbackMonths);
             if (r is null || double.IsNaN(r.Value))
                 continue;
 
