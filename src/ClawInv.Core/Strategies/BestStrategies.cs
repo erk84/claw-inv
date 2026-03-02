@@ -19,7 +19,7 @@ public static class BestStrategies
     /// </summary>
     public static StrategyDefinition BestStrategyV1 => new(
         Id: "best_v1_mom2m_reb2m_top2_abs_lowvol3m",
-        Name: "BestStrategyV1: Mom(2m) reb2m top2 abs + lowvol(3m)",
+        Name: "BestStrategyV1",
         Type: StrategyType.BestStrategyV1MonthEnd,
         RebalanceEveryMonths: 2,
         LookbackMonths: 2,
