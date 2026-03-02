@@ -12,6 +12,9 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<TradeEvent> TradeEvents => Set<TradeEvent>();
     public DbSet<PortfolioDailySnapshot> PortfolioDailySnapshots => Set<PortfolioDailySnapshot>();
 
+    public DbSet<RecommendationRun> RecommendationRuns => Set<RecommendationRun>();
+    public DbSet<TradeRecommendation> TradeRecommendations => Set<TradeRecommendation>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<UniverseSettings>().HasIndex(x => x.Key).IsUnique();
@@ -44,5 +47,20 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         modelBuilder.Entity<PortfolioDailySnapshot>()
             .HasIndex(s => new { s.PortfolioId, s.Date })
             .IsUnique();
+
+        modelBuilder.Entity<RecommendationRun>()
+            .HasOne(r => r.Strategy)
+            .WithMany()
+            .HasForeignKey(r => r.StrategyConfigId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<TradeRecommendation>()
+            .HasOne(t => t.Run)
+            .WithMany(r => r.Trades)
+            .HasForeignKey(t => t.RecommendationRunId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<RecommendationRun>()
+            .HasIndex(r => new { r.StrategyConfigId, r.AsOfDate });
     }
 }

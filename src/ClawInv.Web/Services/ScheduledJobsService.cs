@@ -1,3 +1,5 @@
+using ClawInv.Web.Data;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Hosting;
 
 namespace ClawInv.Web.Services;
@@ -12,6 +14,7 @@ namespace ClawInv.Web.Services;
 /// </summary>
 public sealed class ScheduledJobsService(
     ILogger<ScheduledJobsService> log,
+    IServiceScopeFactory scopeFactory,
     UniverseRegenerator universeRegenerator)
     : BackgroundService
 {
@@ -46,13 +49,20 @@ public sealed class ScheduledJobsService(
                 }
             }
 
-            // Daily: 02:00 UTC (placeholder)
+            // Daily: 02:00 UTC
             if (utcNow.Hour == 2 && utcNow.Minute == 0)
             {
                 try
                 {
-                    // TODO: implement NAV refresh + per-strategy rebalance recommendations.
-                    log.LogInformation("Daily jobs tick: TODO refresh NAV + compute recommendations");
+                    using var scope = scopeFactory.CreateScope();
+                    var db = scope.ServiceProvider.GetRequiredService<ClawInv.Web.Data.AppDbContext>();
+                    var engine = scope.ServiceProvider.GetRequiredService<RecommendationEngine>();
+
+                    var enabled = await db.StrategyConfigs.Where(x => x.Enabled).Select(x => x.Id).ToListAsync(stoppingToken);
+                    log.LogInformation("Daily jobs: computing recommendations for {Count} enabled strategies", enabled.Count);
+
+                    foreach (var id in enabled)
+                        await engine.ComputeAsync(id, stoppingToken);
                 }
                 catch (Exception ex)
                 {

@@ -1,10 +1,79 @@
-﻿@page
-@model IndexModel
+@page
+@model ClawInv.Web.Pages.IndexModel
 @{
-    ViewData["Title"] = "Home page";
+    ViewData["Title"] = "Portföljer";
 }
 
-<div class="text-center">
-    <h1 class="display-4">Welcome</h1>
-    <p>Learn about <a href="https://learn.microsoft.com/aspnet/core">building Web apps with ASP.NET Core</a>.</p>
-</div>
+<h1>Portföljer</h1>
+
+@if (Model.EnabledStrategies.Count == 0)
+{
+    <p>Inga strategier är aktiva. Gå till <a asp-page="/Strategies">Strategier</a> och aktivera minst en.</p>
+}
+else
+{
+    <ul class="nav nav-tabs" role="tablist">
+    @for (var i = 0; i < Model.EnabledStrategies.Count; i++)
+    {
+        var s = Model.EnabledStrategies[i];
+        <li class="nav-item" role="presentation">
+            <button class="nav-link @(i==0?"active":"")" id="tab-@s.Id" data-bs-toggle="tab" data-bs-target="#pane-@s.Id" type="button" role="tab">
+                @s.DisplayName
+            </button>
+        </li>
+    }
+    </ul>
+
+    <div class="tab-content mt-3">
+    @for (var i = 0; i < Model.EnabledStrategies.Count; i++)
+    {
+        var s = Model.EnabledStrategies[i];
+        var r = Model.LatestRunByStrategyId.GetValueOrDefault(s.Id);
+        <div class="tab-pane fade @(i==0?"show active":"")" id="pane-@s.Id" role="tabpanel">
+            <h5>@s.DisplayName</h5>
+            <div class="text-muted"><small>@s.DefaultSource</small></div>
+
+            <div class="mt-3">
+                <div><strong>Slots:</strong> @s.Slots</div>
+                <div><strong>Kind:</strong> @s.Kind</div>
+                <div><strong>Params:</strong> LB=@s.LookbackMonths, Reb=@s.RebalanceMonths, TopK=@s.TopK, abs=@s.UseAbsoluteMomentum, lowVol=@s.UseLowVolFilter</div>
+            </div>
+
+            <hr />
+
+            <h6>Senaste rekommendation</h6>
+            @if (r is null)
+            {
+                <p>Ingen körning ännu (dagligt jobb skapar en körning när strategin är aktiv).</p>
+            }
+            else
+            {
+                <div><strong>As-of:</strong> @r.AsOfDate</div>
+                <div class="text-muted"><small>@r.CreatedAtUtc.ToString("u")</small></div>
+                <div><small>@r.Notes</small></div>
+
+                @if (r.Trades.Count == 0)
+                {
+                    <p class="mt-2">Inga trades listade än (placeholder).</p>
+                }
+                else
+                {
+                    <table class="table table-sm mt-2">
+                        <thead><tr><th>Action</th><th>Fond</th><th>Reason</th></tr></thead>
+                        <tbody>
+                        @foreach (var t in r.Trades)
+                        {
+                            <tr>
+                                <td>@t.Action</td>
+                                <td>@t.FundName</td>
+                                <td>@t.Reason</td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                }
+            }
+        </div>
+    }
+    </div>
+}
