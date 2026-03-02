@@ -36,6 +36,37 @@ public sealed class NavDataStore
     public void Write(string orderbookId, IReadOnlyList<NavPoint> nav)
     {
         var path = SeriesPath(orderbookId);
+
+        // Merge with existing data so repeated partial-window downloads do not truncate history.
+        // This is important for long-running web usage where we frequently load rolling windows.
+        List<NavPoint>? existing = null;
+        if (File.Exists(path))
+        {
+            try
+            {
+                existing = JsonSerializer.Deserialize<List<NavPoint>>(File.ReadAllText(path),
+                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            }
+            catch
+            {
+                existing = null;
+            }
+        }
+
+        if (existing is { Count: > 0 })
+        {
+            var map = new Dictionary<DateOnly, decimal>();
+            foreach (var p in existing)
+                map[p.Date] = p.Nav;
+            foreach (var p in nav)
+                map[p.Date] = p.Nav;
+
+            nav = map
+                .OrderBy(kv => kv.Key)
+                .Select(kv => new NavPoint(kv.Key, kv.Value))
+                .ToList();
+        }
+
         var json = JsonSerializer.Serialize(nav);
         File.WriteAllText(path, json);
     }
