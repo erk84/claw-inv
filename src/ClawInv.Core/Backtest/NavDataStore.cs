@@ -55,13 +55,37 @@ public sealed class NavDataStore
 
         if (existing is { Count: > 0 })
         {
-            var map = new Dictionary<DateOnly, decimal>();
-            foreach (var p in existing)
-                map[p.Date] = p.Nav;
-            foreach (var p in nav)
-                map[p.Date] = p.Nav;
+            // Existing series is already normalized to its own start.
+            // Newly fetched series is ALSO normalized to its (window) start.
+            // To safely merge rolling windows, rescale the new window using an overlap point.
 
-            nav = map
+            var existingMap = existing
+                .GroupBy(p => p.Date)
+                .ToDictionary(g => g.Key, g => g.Last().Nav);
+
+            // Find an overlap date to compute scale. Prefer the latest overlap to reduce drift.
+            decimal scale = 1m;
+            var overlap = nav
+                .Select(p => p.Date)
+                .Where(d => existingMap.ContainsKey(d))
+                .OrderByDescending(d => d)
+                .FirstOrDefault();
+
+            if (overlap != default)
+            {
+                var existingNav = existingMap[overlap];
+                var newNav = nav.First(p => p.Date == overlap).Nav;
+                if (newNav != 0m)
+                    scale = existingNav / newNav;
+            }
+
+            var merged = new Dictionary<DateOnly, decimal>();
+            foreach (var (d, v) in existingMap)
+                merged[d] = v;
+            foreach (var p in nav)
+                merged[p.Date] = p.Nav * scale;
+
+            nav = merged
                 .OrderBy(kv => kv.Key)
                 .Select(kv => new NavPoint(kv.Key, kv.Value))
                 .ToList();
