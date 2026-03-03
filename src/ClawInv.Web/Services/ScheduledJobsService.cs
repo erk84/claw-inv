@@ -15,19 +15,32 @@ namespace ClawInv.Web.Services;
 public sealed class ScheduledJobsService(
     ILogger<ScheduledJobsService> log,
     IServiceScopeFactory scopeFactory,
-    UniverseRegenerator universeRegenerator)
+    UniverseRegenerator universeRegenerator,
+    IConfiguration cfg,
+    IWebHostEnvironment env)
     : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        // Run once on startup (non-destructive): ensure weekly universe exists.
-        try
+        // Universe regeneration must never silently change results vs CLI backtests.
+        // Only regenerate if explicitly enabled, or if the universe file is missing.
+        var universePath = UniversePathResolver.Resolve(cfg, env.ContentRootPath, log);
+        var autoRegen = string.Equals(cfg["ClawInv:AutoRegenerateUniverse"], "true", StringComparison.OrdinalIgnoreCase);
+
+        if (autoRegen || !File.Exists(universePath))
         {
-            await universeRegenerator.RegenerateAsync(stoppingToken);
+            try
+            {
+                await universeRegenerator.RegenerateAsync(stoppingToken);
+            }
+            catch (Exception ex)
+            {
+                log.LogError(ex, "Universe regeneration failed on startup");
+            }
         }
-        catch (Exception ex)
+        else
         {
-            log.LogError(ex, "Universe regeneration failed on startup");
+            log.LogInformation("Universe regeneration disabled; using existing universe at {Path}", universePath);
         }
 
         // Simple periodic loop.
@@ -36,8 +49,8 @@ public sealed class ScheduledJobsService(
         {
             var utcNow = DateTimeOffset.UtcNow;
 
-            // Weekly: Sunday ~03:00 UTC (run once per week even if we missed exact minute)
-            if (utcNow.DayOfWeek == DayOfWeek.Sunday && utcNow.Hour >= 3)
+            // Weekly: Sunday ~03:00 UTC (optional)
+            if (autoRegen && utcNow.DayOfWeek == DayOfWeek.Sunday && utcNow.Hour >= 3)
             {
                 await TryRunOnceAsync(
                     jobKey: "weekly-universe",
