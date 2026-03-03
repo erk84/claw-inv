@@ -26,3 +26,6 @@ out/
 data/universe.json
 data/universe.generated.json
 src/ClawInv.Web/data/
+
+# local verification artifacts
+/tmp/
