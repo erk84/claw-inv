@@ -10,7 +10,8 @@ namespace ClawInv.Web.Services;
 public sealed class UniverseRegenerator(
     ILogger<UniverseRegenerator> log,
     IConfiguration cfg,
-    IServiceScopeFactory scopeFactory)
+    IServiceScopeFactory scopeFactory,
+    IWebHostEnvironment env)
 {
     public async Task RegenerateAsync(CancellationToken ct)
     {
@@ -25,7 +26,7 @@ public sealed class UniverseRegenerator(
         }
 
         var cacheDir = cfg["ClawInv:CacheDir"] ?? "data/avanza-cache";
-        var universePath = UniversePathResolver.Resolve(cfg, AppContext.BaseDirectory, log);
+        var universePath = UniversePathResolver.Resolve(cfg, env.ContentRootPath, log);
 
         Directory.CreateDirectory(cacheDir);
         Directory.CreateDirectory(Path.GetDirectoryName(universePath) ?? ".");

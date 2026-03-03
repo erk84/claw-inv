@@ -6,7 +6,7 @@ using Microsoft.Extensions.Caching.Memory;
 
 namespace ClawInv.Web.Services;
 
-public sealed class NavService(ILogger<NavService> log, IConfiguration cfg, IWebHostEnvironment env)
+public sealed class NavService(ILogger<NavService> log, IConfiguration cfg, IWebHostEnvironment env, UniverseRegenerator universeRegenerator)
 {
     private readonly MemoryCache _mem = new(new MemoryCacheOptions());
 
@@ -15,10 +15,26 @@ public sealed class NavService(ILogger<NavService> log, IConfiguration cfg, IWeb
         var universePath = UniversePathResolver.Resolve(cfg, env.ContentRootPath, log);
         if (!File.Exists(universePath))
         {
-            throw new InvalidOperationException(
-                $"Universe file not found: {universePath}. " +
-                $"Expected repo-root is typically '{Path.GetFullPath(Path.Combine(env.ContentRootPath, "..", "..", "data", "universe.json"))}'. " +
-                "Either set ClawInv:UniversePath (or env ClawInv__UniversePath) to point at your repo-root data/universe.json, or generate it once via the CLI.");
+            // Just-works behavior: if the universe is missing, generate it once.
+            // This is safe for parity because CLI/backtest uses the same repo-root universe file.
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(universePath) ?? ".");
+                log.LogWarning("Universe file missing; attempting auto-generate: {Path}", universePath);
+                await universeRegenerator.RegenerateAsync(ct);
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"Universe file not found: {universePath}. Auto-generation failed: {ex.Message}", ex);
+            }
+
+            if (!File.Exists(universePath))
+            {
+                throw new InvalidOperationException(
+                    $"Universe file not found after auto-generation attempt: {universePath}. " +
+                    $"Expected repo-root is typically '{Path.GetFullPath(Path.Combine(env.ContentRootPath, "..", "..", "data", "universe.json"))}'. " +
+                    "Set ClawInv:UniversePath (or env ClawInv__UniversePath) to point at your repo-root data/universe.json.");
+            }
         }
 
         var cacheDir = cfg["ClawInv:CacheDir"] ?? "data/avanza-cache";
