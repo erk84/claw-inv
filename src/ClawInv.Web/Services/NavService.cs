@@ -6,13 +6,13 @@ using Microsoft.Extensions.Caching.Memory;
 
 namespace ClawInv.Web.Services;
 
-public sealed class NavService(ILogger<NavService> log, IConfiguration cfg)
+public sealed class NavService(ILogger<NavService> log, IConfiguration cfg, IWebHostEnvironment env)
 {
     private readonly MemoryCache _mem = new(new MemoryCacheOptions());
 
     public async Task<IReadOnlyList<NavSeries>> LoadUniverseNavAsync(DateOnly from, DateOnly to, CancellationToken ct)
     {
-        var universePath = cfg["ClawInv:UniversePath"] ?? "data/universe.json";
+        var universePath = UniversePathResolver.Resolve(cfg, env.ContentRootPath, log);
         if (!File.Exists(universePath))
             throw new InvalidOperationException($"Universe file not found: {universePath}. Regenerate universe first.");
 

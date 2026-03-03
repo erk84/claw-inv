@@ -25,7 +25,7 @@ public sealed class UniverseRegenerator(
         }
 
         var cacheDir = cfg["ClawInv:CacheDir"] ?? "data/avanza-cache";
-        var universePath = cfg["ClawInv:UniversePath"] ?? "data/universe.json";
+        var universePath = UniversePathResolver.Resolve(cfg, AppContext.BaseDirectory, log);
 
         Directory.CreateDirectory(cacheDir);
         Directory.CreateDirectory(Path.GetDirectoryName(universePath) ?? ".");
