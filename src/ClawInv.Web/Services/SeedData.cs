@@ -43,6 +43,43 @@ public static class SeedData
             db.StrategyConfigs.AddRange(toAdd);
             await db.SaveChangesAsync(ct);
         }
+
+        // Enforce locked defaults for existing rows too (so web + CLI stay consistent).
+        // Preserve user-controlled fields: Enabled + Slots.
+        var rows = await db.StrategyConfigs.ToListAsync(ct);
+        foreach (var row in rows)
+        {
+            var desired = CreateLockedDefault(row.Kind);
+
+            var enabled = row.Enabled;
+            var slots = row.Slots <= 0 ? 2 : row.Slots;
+            var pending = row.PendingChangesAtUtc;
+
+            row.Key = desired.Key;
+            row.DisplayName = desired.DisplayName;
+            row.Kind = desired.Kind;
+
+            row.Enabled = enabled;
+            row.Slots = slots;
+            row.PendingChangesAtUtc = pending;
+
+            row.LookbackMonths = desired.LookbackMonths;
+            row.RebalanceMonths = desired.RebalanceMonths;
+            row.TopK = desired.TopK;
+            row.UseAbsoluteMomentum = desired.UseAbsoluteMomentum;
+            row.UseLowVolFilter = desired.UseLowVolFilter;
+            row.VolLookbackMonths = desired.VolLookbackMonths;
+            row.TrendMaMonths = desired.TrendMaMonths;
+            row.DefaultSource = desired.DefaultSource;
+
+            row.Regime = desired.Regime;
+            row.RegimeMaMonths = desired.RegimeMaMonths;
+            row.RegimeThreshold = desired.RegimeThreshold;
+            row.RiskOffMode = desired.RiskOffMode;
+            row.DefensiveVolLookbackMonths = desired.DefensiveVolLookbackMonths;
+        }
+
+        await db.SaveChangesAsync(ct);
     }
 
     private static StrategyConfig CreateLockedDefault(ClawInv.Core.Research.ResearchStrategyKind kind)
@@ -66,27 +103,27 @@ public static class SeedData
             case ClawInv.Core.Research.ResearchStrategyKind.MeanReversion:
                 cfg.Key = "MeanReversion/research-final-10y";
                 cfg.DisplayName = "MeanReversion";
-                cfg.LookbackMonths = 3;
+                cfg.LookbackMonths = 2;
                 cfg.RebalanceMonths = 2;
                 cfg.TopK = 1;
                 cfg.UseAbsoluteMomentum = false;
                 cfg.UseLowVolFilter = false;
                 cfg.VolLookbackMonths = 12;
                 cfg.TrendMaMonths = 1;
-                cfg.DefaultSource = "Research: best_MeanReversion.json (~1.305M final over 10y)";
+                cfg.DefaultSource = "Best-known grid (seeded): lb=2 reb=2 topK=1 (10y, slots=2)";
                 break;
 
             case ClawInv.Core.Research.ResearchStrategyKind.Momentum:
                 cfg.Key = "Momentum/research-default";
                 cfg.DisplayName = "Momentum";
-                cfg.LookbackMonths = 12;
+                cfg.LookbackMonths = 9;
                 cfg.RebalanceMonths = 3;
-                cfg.TopK = 2;
-                cfg.UseAbsoluteMomentum = true;
+                cfg.TopK = 1;
+                cfg.UseAbsoluteMomentum = false;
                 cfg.UseLowVolFilter = false;
                 cfg.VolLookbackMonths = 6;
-                cfg.TrendMaMonths = 18;
-                cfg.DefaultSource = "Research: best_Momentum.json (seeded)";
+                cfg.TrendMaMonths = 12;
+                cfg.DefaultSource = "Best-known grid (seeded): lb=9 reb=3 topK=1 (10y, slots=2)";
                 break;
 
             case ClawInv.Core.Research.ResearchStrategyKind.Trend:

@@ -109,26 +109,28 @@ public sealed class StrategiesModel(AppDbContext db, BackgroundTaskWorker tasks)
         switch (row.Kind)
         {
             case ClawInv.Core.Research.ResearchStrategyKind.MeanReversion:
-                // Seeded from: best_MeanReversion.json (~1.305M final / 10y)
-                row.LookbackMonths = 3;
+                // Best-known (10y grid): lb=2 reb=2 topK=1, slots=2
+                row.LookbackMonths = 2;
                 row.RebalanceMonths = 2;
                 row.TopK = 1;
                 row.UseAbsoluteMomentum = false;
                 row.UseLowVolFilter = false;
                 row.VolLookbackMonths = 12;
                 row.TrendMaMonths = 1;
-                row.DefaultSource = "Research: best_MeanReversion.json (~1.305M final over 10y)";
+                row.DefaultSource = "Best-known grid (locked): lb=2 reb=2 topK=1 (10y, slots=2)";
                 break;
 
             case ClawInv.Core.Research.ResearchStrategyKind.Momentum:
-                row.LookbackMonths = 12;
+                // Best-known after impl #7: dual-horizon momentum.
+                // Best grid: lb=9 reb=3 topK=1 (10y, slots=2). Note: abs-mom is OFF in CLI unless explicitly set.
+                row.LookbackMonths = 9;
                 row.RebalanceMonths = 3;
-                row.TopK = 2;
-                row.UseAbsoluteMomentum = true;
+                row.TopK = 1;
+                row.UseAbsoluteMomentum = false;
                 row.UseLowVolFilter = false;
                 row.VolLookbackMonths = 6;
-                row.TrendMaMonths = 18;
-                row.DefaultSource = "Research: best_Momentum.json (locked)";
+                row.TrendMaMonths = 12;
+                row.DefaultSource = "Best-known grid (locked): lb=9 reb=3 topK=1 (10y, slots=2)";
                 break;
 
             case ClawInv.Core.Research.ResearchStrategyKind.Trend:
