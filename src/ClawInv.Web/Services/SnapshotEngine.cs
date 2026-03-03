@@ -53,7 +53,25 @@ public sealed class SnapshotEngine(
         var navSeries = await navService.LoadUniverseNavAsync(from, asOf, ct);
 
         var def = StrategyMapper.ToStrategyDefinition(strat);
-        var (r, curve) = ClawInv.Core.Backtest.MonthEndRebalanceDailyBacktester.RunWithEquityCurve(def, navSeries, from, asOf);
+        var (r, curve, rebalances) = ClawInv.Core.Backtest.MonthEndRebalanceDailyBacktester.RunWithEquityCurve(def, navSeries, from, asOf);
+
+        // Also rebuild TradeEvents from the rebalance schedule so the UI transactions match the backtest.
+        await db.TradeEvents.Where(t => t.PortfolioId == portfolio.Id && t.Date >= from && t.Date <= asOf).ExecuteDeleteAsync(ct);
+        await db.PortfolioHoldings.Where(h => h.PortfolioId == portfolio.Id).ExecuteDeleteAsync(ct);
+
+        var held = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var (date, newHoldings) in rebalances)
+        {
+            var next = new HashSet<string>(newHoldings, StringComparer.Ordinal);
+
+            foreach (var sold in held.Except(next).OrderBy(x => x))
+                db.TradeEvents.Add(new TradeEvent { PortfolioId = portfolio.Id, Date = date, Side = TradeSide.Sell, FundId = sold });
+
+            foreach (var bought in next.Except(held).OrderBy(x => x))
+                db.TradeEvents.Add(new TradeEvent { PortfolioId = portfolio.Id, Date = date, Side = TradeSide.Buy, FundId = bought });
+
+            held = next;
+        }
 
         var snapshots = curve
             .Where(x => x.Date >= from && x.Date <= asOf)

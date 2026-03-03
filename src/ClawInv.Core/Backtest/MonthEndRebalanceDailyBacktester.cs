@@ -27,11 +27,13 @@ public static class MonthEndRebalanceDailyBacktester
         DateOnly to,
         decimal maxDrawdownFloor = -1.0m)
     {
-        var (r, _) = RunWithEquityCurve(strat, series, from, to, maxDrawdownFloor);
+        var (r, _, _) = RunWithEquityCurve(strat, series, from, to, maxDrawdownFloor);
         return r;
     }
 
-    public static (BacktestResult Result, IReadOnlyList<(DateOnly Date, decimal EquityIndex)> EquityCurve) RunWithEquityCurve(
+    public static (BacktestResult Result,
+        IReadOnlyList<(DateOnly Date, decimal EquityIndex)> EquityCurve,
+        IReadOnlyList<(DateOnly Date, string[] Holdings)> Rebalances) RunWithEquityCurve(
         StrategyDefinition strat,
         IReadOnlyList<NavSeries> series,
         DateOnly from,
@@ -47,14 +49,14 @@ public static class MonthEndRebalanceDailyBacktester
             .ToArray();
 
         if (allDates.Length < 30)
-            return (new BacktestResult(strat.Id, strat.Name + " (daily month-end rebalance)", from, to, 0, 0m, 0m, null, 0m, 0m, "Insufficient data"), Array.Empty<(DateOnly Date, decimal EquityIndex)>() );
+            return (new BacktestResult(strat.Id, strat.Name + " (daily month-end rebalance)", from, to, 0, 0m, 0m, null, 0m, 0m, "Insufficient data"), Array.Empty<(DateOnly Date, decimal EquityIndex)>(), Array.Empty<(DateOnly Date, string[] Holdings)>() );
 
         // Skip weekends to avoid flat/duplicated nav-at-or-before effects
         allDates = allDates.Where(d => d.DayOfWeek is not DayOfWeek.Saturday and not DayOfWeek.Sunday).ToArray();
 
         var monthEnds = GetMonthEndDates(allDates);
         if (monthEnds.Count < 3)
-            return (new BacktestResult(strat.Id, strat.Name + " (daily month-end rebalance)", from, to, 0, 0m, 0m, null, 0m, 0m, "Insufficient month-ends"), Array.Empty<(DateOnly Date, decimal EquityIndex)>() );
+            return (new BacktestResult(strat.Id, strat.Name + " (daily month-end rebalance)", from, to, 0, 0m, 0m, null, 0m, 0m, "Insufficient month-ends"), Array.Empty<(DateOnly Date, decimal EquityIndex)>(), Array.Empty<(DateOnly Date, string[] Holdings)>() );
 
         // Pre-index each fund NAV series for nav-at-or-before lookup
         var fundIndex = series.ToDictionary(s => s.OrderbookId, s => s.Points.OrderBy(p => p.Date).ToArray());
@@ -65,6 +67,8 @@ public static class MonthEndRebalanceDailyBacktester
         var dailyReturns = new List<double>(allDates.Length);
         var equityCurve = new List<(DateOnly Date, decimal EquityIndex)>(allDates.Length);
         equityCurve.Add((allDates[0], equity));
+
+        var rebalances = new List<(DateOnly Date, string[] Holdings)>();
 
         // Holdings as fundId -> weight
         Dictionary<string, decimal> holdings = new();
@@ -86,6 +90,7 @@ public static class MonthEndRebalanceDailyBacktester
             if (shouldRebalance)
             {
                 holdings = new Dictionary<string, decimal>(ClawInv.Core.Strategies.Logic.HoldingsSelector.Select(strat, series, fundIndex, periodStart));
+                rebalances.Add((periodStart, holdings.Keys.OrderBy(x => x).ToArray()));
             }
 
             // Apply daily returns from day after periodStart up to periodEnd (inclusive)
@@ -117,7 +122,8 @@ public static class MonthEndRebalanceDailyBacktester
                             equity - 1.0m,
                             $"Breached MDD floor {maxDrawdownFloor:P0}"
                         ),
-                        equityCurve
+                        equityCurve,
+                        rebalances
                     );
                 }
             }
@@ -141,7 +147,8 @@ public static class MonthEndRebalanceDailyBacktester
                 equity - 1.0m,
                 "OK"
             ),
-            equityCurve
+            equityCurve,
+            rebalances
         );
     }
 
