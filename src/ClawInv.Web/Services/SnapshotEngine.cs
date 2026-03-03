@@ -71,6 +71,7 @@ public sealed class SnapshotEngine(
 
         // fundId -> shares
         var shares = new Dictionary<string, double>(StringComparer.Ordinal);
+        var cash = 1.0; // equity value when not invested
 
         // Try bootstrap from existing holdings if we have no trades in the window.
         if (trades.Count == 0 && portfolio.Holdings.Count > 0)
@@ -83,7 +84,9 @@ public sealed class SnapshotEngine(
                 .ToArray();
 
             if (active.Length > 0)
-                RebalanceEqualWeight(shares, active, equityValue: 1.0, date: start);
+            {
+                RebalanceEqualWeight(shares, ref cash, active, equityValue: cash, date: start);
+            }
         }
 
         var snapshots = new List<PortfolioDailySnapshot>(allDates.Length);
@@ -94,11 +97,15 @@ public sealed class SnapshotEngine(
 
         foreach (var d in allDates)
         {
-            var equity = ComputeEquityValue(shares, d);
+            // Compute equity at start-of-day (pre-trades) to use as rebalance base.
+            var equityPre = ComputeEquityValue(shares, cash, d);
 
             // Rebalance on trade dates: after applying trade events, reallocate equal-weight.
             if (tradeGroups.TryGetValue(d, out var dayTrades))
             {
+                // Realize equity into cash before changing holdings.
+                cash = equityPre;
+
                 // Apply sells then buys to determine the new target set.
                 foreach (var t in dayTrades.Where(x => x.Side == TradeSide.Sell))
                     shares.Remove(t.FundId);
@@ -109,10 +116,14 @@ public sealed class SnapshotEngine(
 
                 var target = shares.Keys.OrderBy(x => x).ToArray();
                 if (target.Length > 0)
-                    RebalanceEqualWeight(shares, target, equity, d);
+                    RebalanceEqualWeight(shares, ref cash, target, equityPre, d);
+                else
+                    shares.Clear();
             }
 
-            // equity index is relative to initial value=1.0 (because we allocate from 1.0).
+            // Snapshot should reflect end-of-day holdings at date d (post-trade on rebalance days).
+            var equity = ComputeEquityValue(shares, cash, d);
+
             snapshots.Add(new PortfolioDailySnapshot
             {
                 PortfolioId = portfolio.Id,
@@ -124,14 +135,13 @@ public sealed class SnapshotEngine(
         return snapshots;
     }
 
-    private double ComputeEquityValue(Dictionary<string, double> shares, DateOnly date)
+    private double ComputeEquityValue(Dictionary<string, double> shares, double cash, DateOnly date)
     {
-        if (shares.Count == 0)
-            return 1.0;
+        var sum = cash;
 
-        double sum = 0.0;
         foreach (var (fundId, sh) in shares)
         {
+            if (sh <= 0) continue;
             var navAt = nav.TryGetNavAtOrBefore(fundId, date);
             if (navAt is null || navAt <= 0m)
                 continue;
@@ -139,23 +149,25 @@ public sealed class SnapshotEngine(
             sum += sh * (double)navAt.Value;
         }
 
-        // If everything is missing, keep last value-ish by returning 1.
-        return sum > 0.0 ? sum : 1.0;
+        return sum;
     }
 
-    private void RebalanceEqualWeight(Dictionary<string, double> shares, string[] targetIds, double equityValue, DateOnly date)
+    private void RebalanceEqualWeight(Dictionary<string, double> shares, ref double cash, string[] targetIds, double equityValue, DateOnly date)
     {
         if (targetIds.Length == 0)
             return;
 
         var perFund = equityValue / targetIds.Length;
+        cash = 0.0;
 
         foreach (var id in targetIds)
         {
             var navAt = nav.TryGetNavAtOrBefore(id, date);
             if (navAt is null || navAt <= 0m)
             {
+                // If we can't price the fund at rebalance date, keep its portion as cash.
                 shares[id] = 0.0;
+                cash += perFund;
                 continue;
             }
 
