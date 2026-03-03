@@ -17,12 +17,45 @@ public sealed class BootstrapEngine(
 {
     public async Task BootstrapLast5YearsIfEmptyAsync(int strategyConfigId, DateOnly asOf, CancellationToken ct)
     {
-        // If we already have trades, assume user has history and do not overwrite.
-        var hasTrades = await db.TradeEvents.AnyAsync(t => t.Portfolio!.StrategyConfigId == strategyConfigId, ct);
-        if (hasTrades)
+        // If we already have a deep history, do not overwrite. But if we only have shallow history
+        // (e.g. a couple of trades from the daily job), we must still bootstrap to make web match CLI backtests.
+        var existingTrades = await db.TradeEvents
+            .Where(t => t.Portfolio!.StrategyConfigId == strategyConfigId)
+            .Select(t => t.Date)
+            .ToListAsync(ct);
+
+        if (existingTrades.Count > 0)
         {
-            log.LogInformation("Bootstrap skipped (already has trades): strategyId={Id}", strategyConfigId);
-            return;
+            var minDate = existingTrades.Min();
+            // Heuristic: if we have at least ~2 years of trades, or if the earliest trade reaches far back,
+            // assume history is already bootstrapped.
+            var deepEnough = minDate <= asOf.AddYears(-9) || minDate <= asOf.AddYears(-2);
+            if (deepEnough)
+            {
+                log.LogInformation("Bootstrap skipped (already has history): strategyId={Id} minTrade={Min} trades={Count}", strategyConfigId, minDate, existingTrades.Count);
+                return;
+            }
+
+            log.LogWarning("Bootstrap will overwrite shallow history: strategyId={Id} minTrade={Min} trades={Count}", strategyConfigId, minDate, existingTrades.Count);
+
+            // Clear shallow history first.
+            var portfolioIds = await db.Portfolios.Where(p => p.StrategyConfigId == strategyConfigId).Select(p => p.Id).ToListAsync(ct);
+            if (portfolioIds.Count > 0)
+            {
+                await db.PortfolioDailySnapshots.Where(s => portfolioIds.Contains(s.PortfolioId)).ExecuteDeleteAsync(ct);
+                await db.TradeEvents.Where(t => portfolioIds.Contains(t.PortfolioId)).ExecuteDeleteAsync(ct);
+                await db.PortfolioHoldings.Where(h => portfolioIds.Contains(h.PortfolioId)).ExecuteDeleteAsync(ct);
+                await db.Portfolios.Where(p => portfolioIds.Contains(p.Id)).ExecuteDeleteAsync(ct);
+            }
+
+            var runIds = await db.RecommendationRuns.Where(r => r.StrategyConfigId == strategyConfigId).Select(r => r.Id).ToListAsync(ct);
+            if (runIds.Count > 0)
+            {
+                await db.TradeRecommendations.Where(t => runIds.Contains(t.RecommendationRunId)).ExecuteDeleteAsync(ct);
+                await db.RecommendationRuns.Where(r => runIds.Contains(r.Id)).ExecuteDeleteAsync(ct);
+            }
+
+            await db.SaveChangesAsync(ct);
         }
 
         var from = asOf.AddYears(-10);
