@@ -14,7 +14,12 @@ public sealed class NavService(ILogger<NavService> log, IConfiguration cfg, IWeb
     {
         var universePath = UniversePathResolver.Resolve(cfg, env.ContentRootPath, log);
         if (!File.Exists(universePath))
-            throw new InvalidOperationException($"Universe file not found: {universePath}. Regenerate universe first.");
+        {
+            throw new InvalidOperationException(
+                $"Universe file not found: {universePath}. " +
+                $"Expected repo-root is typically '{Path.GetFullPath(Path.Combine(env.ContentRootPath, "..", "..", "data", "universe.json"))}'. " +
+                "Either set ClawInv:UniversePath (or env ClawInv__UniversePath) to point at your repo-root data/universe.json, or generate it once via the CLI.");
+        }
 
         var cacheDir = cfg["ClawInv:CacheDir"] ?? "data/avanza-cache";
         var navStoreDir = cfg["ClawInv:NavStoreDir"] ?? "data/nav";

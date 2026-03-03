@@ -11,11 +11,11 @@ internal static class UniversePathResolver
             ? configured
             : Path.GetFullPath(Path.Combine(contentRoot, configured));
 
-        // Prefer repo-root data/universe.json when running from source tree, to avoid divergence
-        // between CLI (uses repo-root data/universe.json in scripts) and the web app.
-        var repoRootCandidate = Path.GetFullPath(Path.Combine(contentRoot, "..", "..", "data", "universe.json"));
+        // Prefer the repo-root data/universe.json when running from a source tree.
+        // This avoids divergence vs CLI backtests (which use repo-root data/universe.json).
+        var repoRootCandidate = FindUpwards(contentRoot, Path.Combine("data", "universe.json"), maxLevels: 8);
 
-        if (File.Exists(repoRootCandidate))
+        if (repoRootCandidate is not null && File.Exists(repoRootCandidate))
         {
             if (!File.Exists(configuredAbs))
             {
@@ -33,6 +33,21 @@ internal static class UniversePathResolver
         }
 
         return configuredAbs;
+    }
+
+    private static string? FindUpwards(string startDir, string relativePath, int maxLevels)
+    {
+        var dir = new DirectoryInfo(Path.GetFullPath(startDir));
+        for (var i = 0; i <= maxLevels && dir is not null; i++)
+        {
+            var candidate = Path.Combine(dir.FullName, relativePath);
+            if (File.Exists(candidate))
+                return candidate;
+
+            dir = dir.Parent;
+        }
+
+        return null;
     }
 
     private static bool HashesEqual(string a, string b)
