@@ -46,7 +46,10 @@ public static class SeedData
 
         // Enforce locked defaults for existing rows too (so web + CLI stay consistent).
         // Preserve user-controlled fields: Enabled + Slots.
+        // If locked params change for an enabled strategy, we must rebuild its history so UI matches.
         var rows = await db.StrategyConfigs.ToListAsync(ct);
+        var needsRebootstrap = new List<int>();
+
         foreach (var row in rows)
         {
             var desired = CreateLockedDefault(row.Kind);
@@ -54,6 +57,20 @@ public static class SeedData
             var enabled = row.Enabled;
             var slots = row.Slots <= 0 ? 2 : row.Slots;
             var pending = row.PendingChangesAtUtc;
+
+            var lockedChanged =
+                row.LookbackMonths != desired.LookbackMonths ||
+                row.RebalanceMonths != desired.RebalanceMonths ||
+                row.TopK != desired.TopK ||
+                row.UseAbsoluteMomentum != desired.UseAbsoluteMomentum ||
+                row.UseLowVolFilter != desired.UseLowVolFilter ||
+                row.VolLookbackMonths != desired.VolLookbackMonths ||
+                row.TrendMaMonths != desired.TrendMaMonths ||
+                row.Regime != desired.Regime ||
+                row.RegimeMaMonths != desired.RegimeMaMonths ||
+                Math.Abs(row.RegimeThreshold - desired.RegimeThreshold) > 1e-12 ||
+                row.RiskOffMode != desired.RiskOffMode ||
+                row.DefensiveVolLookbackMonths != desired.DefensiveVolLookbackMonths;
 
             row.Key = desired.Key;
             row.DisplayName = desired.DisplayName;
@@ -77,9 +94,53 @@ public static class SeedData
             row.RegimeThreshold = desired.RegimeThreshold;
             row.RiskOffMode = desired.RiskOffMode;
             row.DefensiveVolLookbackMonths = desired.DefensiveVolLookbackMonths;
+
+            if (enabled && lockedChanged)
+                needsRebootstrap.Add(row.Id);
         }
 
         await db.SaveChangesAsync(ct);
+
+        if (needsRebootstrap.Count > 0)
+        {
+            var asOf = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-1));
+            var bootstrap = scope.ServiceProvider.GetRequiredService<BootstrapEngine>();
+
+            foreach (var id in needsRebootstrap.Distinct())
+            {
+                await ClearStrategyHistoryAsync(db, id, ct);
+                await bootstrap.BootstrapLast5YearsIfEmptyAsync(id, asOf, ct);
+            }
+        }
+    }
+
+    private static async Task ClearStrategyHistoryAsync(AppDbContext db, int strategyConfigId, CancellationToken ct)
+    {
+        var portfolioIds = await db.Portfolios
+            .Where(p => p.StrategyConfigId == strategyConfigId)
+            .Select(p => p.Id)
+            .ToListAsync(ct);
+
+        if (portfolioIds.Count > 0)
+        {
+            await db.PortfolioDailySnapshots.Where(s => portfolioIds.Contains(s.PortfolioId)).ExecuteDeleteAsync(ct);
+            await db.TradeEvents.Where(t => portfolioIds.Contains(t.PortfolioId)).ExecuteDeleteAsync(ct);
+            await db.PortfolioHoldings.Where(h => portfolioIds.Contains(h.PortfolioId)).ExecuteDeleteAsync(ct);
+            await db.Portfolios.Where(p => portfolioIds.Contains(p.Id)).ExecuteDeleteAsync(ct);
+        }
+
+        var runIds = await db.RecommendationRuns
+            .Where(r => r.StrategyConfigId == strategyConfigId)
+            .Select(r => r.Id)
+            .ToListAsync(ct);
+
+        if (runIds.Count > 0)
+        {
+            await db.TradeRecommendations.Where(t => runIds.Contains(t.RecommendationRunId)).ExecuteDeleteAsync(ct);
+            await db.RecommendationRuns.Where(r => runIds.Contains(r.Id)).ExecuteDeleteAsync(ct);
+        }
+
+        await db.BackgroundTasks.Where(t => t.StrategyConfigId == strategyConfigId).ExecuteDeleteAsync(ct);
     }
 
     private static StrategyConfig CreateLockedDefault(ClawInv.Core.Research.ResearchStrategyKind kind)
