@@ -112,6 +112,34 @@ public static class SeedData
                 await bootstrap.BootstrapLast5YearsIfEmptyAsync(id, asOf, ct);
             }
         }
+
+        // Ensure enabled strategies eventually get history even if they were enabled long ago
+        // (and thus do not trigger OnPost newlyEnabled). We enqueue a durable DB task when
+        // there are no snapshots yet.
+        var enabledIds = await db.StrategyConfigs.Where(s => s.Enabled).Select(s => s.Id).ToListAsync(ct);
+        foreach (var id in enabledIds)
+        {
+            var hasSnapshots = await db.Portfolios
+                .Where(p => p.StrategyConfigId == id)
+                .AnyAsync(p => db.PortfolioDailySnapshots.Any(s => s.PortfolioId == p.Id), ct);
+
+            if (hasSnapshots)
+                continue;
+
+            var hasPending = await db.BackgroundTasks.AnyAsync(t => t.StrategyConfigId == id && t.Type == BackgroundTaskType.BootstrapStrategy && t.Status == BackgroundTaskStatus.Pending, ct);
+            if (hasPending)
+                continue;
+
+            db.BackgroundTasks.Add(new BackgroundTask
+            {
+                Type = BackgroundTaskType.BootstrapStrategy,
+                Status = BackgroundTaskStatus.Pending,
+                StrategyConfigId = id,
+                Message = $"Bootstrap last 5y as-of {DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-1))}"
+            });
+        }
+
+        await db.SaveChangesAsync(ct);
     }
 
     private static async Task ClearStrategyHistoryAsync(AppDbContext db, int strategyConfigId, CancellationToken ct)
