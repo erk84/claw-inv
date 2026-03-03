@@ -6,6 +6,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\ClawInv.Core\ClawInv.Core.csproj" />
+    <ProjectReference Include="..\ClawInv.Web\ClawInv.Web.csproj" />
   </ItemGroup>
 
   <ItemGroup>

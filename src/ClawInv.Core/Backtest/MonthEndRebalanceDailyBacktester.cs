@@ -27,6 +27,17 @@ public static class MonthEndRebalanceDailyBacktester
         DateOnly to,
         decimal maxDrawdownFloor = -1.0m)
     {
+        var (r, _) = RunWithEquityCurve(strat, series, from, to, maxDrawdownFloor);
+        return r;
+    }
+
+    public static (BacktestResult Result, IReadOnlyList<(DateOnly Date, decimal EquityIndex)> EquityCurve) RunWithEquityCurve(
+        StrategyDefinition strat,
+        IReadOnlyList<NavSeries> series,
+        DateOnly from,
+        DateOnly to,
+        decimal maxDrawdownFloor = -1.0m)
+    {
         if (strat.TopK > 2)
             throw new ArgumentException("MonthEndRebalanceDailyBacktester supports TopK<=2.");
 
@@ -36,14 +47,14 @@ public static class MonthEndRebalanceDailyBacktester
             .ToArray();
 
         if (allDates.Length < 30)
-            return new BacktestResult(strat.Id, strat.Name + " (daily month-end rebalance)", from, to, 0, 0m, 0m, null, 0m, 0m, "Insufficient data");
+            return (new BacktestResult(strat.Id, strat.Name + " (daily month-end rebalance)", from, to, 0, 0m, 0m, null, 0m, 0m, "Insufficient data"), Array.Empty<(DateOnly Date, decimal EquityIndex)>() );
 
         // Skip weekends to avoid flat/duplicated nav-at-or-before effects
         allDates = allDates.Where(d => d.DayOfWeek is not DayOfWeek.Saturday and not DayOfWeek.Sunday).ToArray();
 
         var monthEnds = GetMonthEndDates(allDates);
         if (monthEnds.Count < 3)
-            return new BacktestResult(strat.Id, strat.Name + " (daily month-end rebalance)", from, to, 0, 0m, 0m, null, 0m, 0m, "Insufficient month-ends");
+            return (new BacktestResult(strat.Id, strat.Name + " (daily month-end rebalance)", from, to, 0, 0m, 0m, null, 0m, 0m, "Insufficient month-ends"), Array.Empty<(DateOnly Date, decimal EquityIndex)>() );
 
         // Pre-index each fund NAV series for nav-at-or-before lookup
         var fundIndex = series.ToDictionary(s => s.OrderbookId, s => s.Points.OrderBy(p => p.Date).ToArray());
@@ -52,6 +63,8 @@ public static class MonthEndRebalanceDailyBacktester
         decimal peak = 1.0m;
         decimal mdd = 0.0m;
         var dailyReturns = new List<double>(allDates.Length);
+        var equityCurve = new List<(DateOnly Date, decimal EquityIndex)>(allDates.Length);
+        equityCurve.Add((allDates[0], equity));
 
         // Holdings as fundId -> weight
         Dictionary<string, decimal> holdings = new();
@@ -82,6 +95,7 @@ public static class MonthEndRebalanceDailyBacktester
                 var r = PortfolioDailyReturn(holdings, fundIndex, d);
                 dailyReturns.Add((double)r);
                 equity *= (1.0m + r);
+                equityCurve.Add((d, equity));
 
                 if (equity > peak) peak = equity;
                 var dd = equity / peak - 1.0m;
@@ -89,18 +103,21 @@ public static class MonthEndRebalanceDailyBacktester
 
                 if (maxDrawdownFloor > -0.99m && mdd < maxDrawdownFloor)
                 {
-                    return new BacktestResult(
-                        strat.Id,
-                        strat.Name + " (daily month-end rebalance)",
-                        from,
-                        to,
-                        allDates[^1].DayNumber - allDates[0].DayNumber,
-                        Cagr(from, d, 1.0m, equity),
-                        0m,
-                        null,
-                        mdd,
-                        equity - 1.0m,
-                        $"Breached MDD floor {maxDrawdownFloor:P0}"
+                    return (
+                        new BacktestResult(
+                            strat.Id,
+                            strat.Name + " (daily month-end rebalance)",
+                            from,
+                            to,
+                            allDates[^1].DayNumber - allDates[0].DayNumber,
+                            Cagr(from, d, 1.0m, equity),
+                            0m,
+                            null,
+                            mdd,
+                            equity - 1.0m,
+                            $"Breached MDD floor {maxDrawdownFloor:P0}"
+                        ),
+                        equityCurve
                     );
                 }
             }
@@ -110,18 +127,21 @@ public static class MonthEndRebalanceDailyBacktester
         var sharpe = SharpeDaily(dailyReturns);
         var vol = VolDaily(dailyReturns);
 
-        return new BacktestResult(
-            strat.Id,
-            strat.Name + " (daily month-end rebalance)",
-            allDates[0],
-            allDates[^1],
-            allDates[^1].DayNumber - allDates[0].DayNumber,
-            cagr,
-            (decimal)vol,
-            sharpe is null ? null : (decimal?)sharpe,
-            mdd,
-            equity - 1.0m,
-            "OK"
+        return (
+            new BacktestResult(
+                strat.Id,
+                strat.Name + " (daily month-end rebalance)",
+                allDates[0],
+                allDates[^1],
+                allDates[^1].DayNumber - allDates[0].DayNumber,
+                cagr,
+                (decimal)vol,
+                sharpe is null ? null : (decimal?)sharpe,
+                mdd,
+                equity - 1.0m,
+                "OK"
+            ),
+            equityCurve
         );
     }
 
